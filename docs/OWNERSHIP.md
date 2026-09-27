@@ -1,0 +1,13 @@
+# Ownership
+
+The WizardGang repository owner is accountable for this contract and its GitHub settings. The change author owns the proposed patch and its evidence; the reviewer owns review of the exact head; the release operator owns tag and Release verification. A person may hold more than one role while the repository is small, but no role may claim a check that did not run. GitHub permissions and actual collaborators are verified live before an approval requirement is enabled. Ownership is assigned by provider permissions and this document; no unverified account or team is named as a code owner.
+
+| Concern | Accountable role | Required evidence |
+| --- | --- | --- |
+| Governance and task order | Repository owner | Current plan, first task, accepted history |
+| Controlled change | Change author | Branch, PR, one commit, complete record |
+| Acceptance | Reviewer or repository owner | Exact-head checks, mergeability, policy readback |
+| Provider settings and security | Repository owner | Committed policy, authorized apply, live readback |
+| Release | Release operator | Annotated tag, reproduced artifact, immutable Release, digest and attestation verification |
+
+Security reports go through [SECURITY.md](../SECURITY.md). High-risk changes require explicit rollback or forward-fix controls in the controlled record. Provider access failures block acceptance rather than silently delegating authority to a local assumption.

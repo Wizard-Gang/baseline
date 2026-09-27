@@ -1,0 +1,47 @@
+{
+  "repository": "Wizard-Gang/baseline",
+  "defaultBranch": "main",
+  "mergeMethods": {
+    "mergeCommit": false,
+    "squash": true,
+    "rebase": false
+  },
+  "allowAutoMerge": true,
+  "deleteBranchOnMerge": true,
+  "requiredStatusChecks": [
+    "verify",
+    "change-id",
+    "security"
+  ],
+  "rulesets": [
+    {
+      "name": "main-protection",
+      "target": "branch",
+      "enforcement": "active",
+      "include": [
+        "refs/heads/main"
+      ],
+      "bypassActors": [],
+      "requireBranchUpToDate": true,
+      "rules": [
+        "deletion",
+        "non_fast_forward",
+        "pull_request",
+        "required_status_checks"
+      ]
+    },
+    {
+      "name": "release-tag-immutability",
+      "target": "tag",
+      "enforcement": "active",
+      "include": [
+        "refs/tags/v*"
+      ],
+      "bypassActors": [],
+      "rules": [
+        "deletion",
+        "update"
+      ]
+    }
+  ]
+}

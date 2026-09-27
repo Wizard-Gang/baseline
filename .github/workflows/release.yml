@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    name: reproduce
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      archive-sha256: ${{ steps.archive.outputs.sha256 }}
+      source-commit: ${{ steps.archive.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install pinned npm
+        run: npm install --global npm@12.1.0
+      - name: Fetch main for release reachability
+        run: git fetch --force origin main:refs/remotes/origin/main
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reproduce contract checks
+        run: npm run check
+      - name: Audit all dependencies
+        run: npm run audit:dependencies
+      - name: Verify annotated tag identity
+        run: npm run check:release -- identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
+      - name: Reproduce source archive
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          archive="dist/baseline-$GITHUB_REF_NAME.tar.gz"
+          git archive --format=tar --prefix="baseline-$GITHUB_REF_NAME/" "$GITHUB_REF_NAME" | gzip -n > "$archive"
+          echo "sha256=$(sha256sum "$archive" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish
+    needs: reproduce
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+      - name: Fetch main for release reachability
+        run: git fetch --force origin main:refs/remotes/origin/main
+      - name: Reverify annotated tag identity
+        run: node scripts/check-release.mjs identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
+      - name: Rebuild and compare clean-job digest
+        id: archive
+        shell: bash
+        env:
+          EXPECTED_SHA256: ${{ needs.reproduce.outputs.archive-sha256 }}
+          EXPECTED_COMMIT: ${{ needs.reproduce.outputs.source-commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          mkdir -p dist
+          archive="dist/baseline-$GITHUB_REF_NAME.tar.gz"
+          git archive --format=tar --prefix="baseline-$GITHUB_REF_NAME/" "$GITHUB_REF_NAME" | gzip -n > "$archive"
+          actual="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          test "$actual" = "$EXPECTED_SHA256"
+          node scripts/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --write dist/SHA256SUMS
+          node scripts/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --manifest dist/SHA256SUMS
+          echo "artifact=$archive" >> "$GITHUB_OUTPUT"
+      - name: Attest reproduced archive
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ steps.archive.outputs.artifact }}
+      - name: Verify artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/check-release.mjs attestation
+          --tag "$GITHUB_REF_NAME"
+          --commit "$GITHUB_SHA"
+          --artifact "${{ steps.archive.outputs.artifact }}"
+          --repo "$GITHUB_REPOSITORY"
+      - name: Reconcile immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/publish-release.mjs
+          --tag "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --artifact "${{ steps.archive.outputs.artifact }}"
+          --manifest dist/SHA256SUMS
+          --commit "$GITHUB_SHA"

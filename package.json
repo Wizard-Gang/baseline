@@ -1,0 +1,24 @@
+{
+  "name": "baseline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WizardGang change-management reference implementation",
+  "engines": {
+    "node": "26.x",
+    "npm": "12.x"
+  },
+  "packageManager": "npm@12.1.0",
+  "scripts": {
+    "check": "npm run test:plan-queue && node --test tests/*.test.mjs && node scripts/check-repository.mjs && node scripts/check-change.mjs",
+    "check:change": "node scripts/check-change.mjs",
+    "check:repository": "node scripts/check-repository.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "check:patch": "node scripts/check-patch.mjs",
+    "audit:dependencies": "npm audit --audit-level=high",
+    "verify:github-settings": "node scripts/verify-github-repository-settings.mjs",
+    "apply:github-settings": "node scripts/apply-github-repository-settings.mjs",
+    "test:plan-queue": "node scripts/check-portfolio-contract.mjs",
+    "test:github-settings": "node --test tests/github-settings.test.mjs"
+  }
+}
