@@ -204,9 +204,8 @@ export async function githubApi(
   });
 
   if (response.status === 401 || response.status === 403) {
-    const detail = await response.text();
     const error = new Error(
-      `GitHub Administration API is inaccessible (${response.status}): ${detail}`,
+      `GitHub ${method} ${path} needs Repository Administration ${method === "GET" ? "read" : "write"} access (HTTP ${response.status})`,
     );
     error.code = "GITHUB_ADMIN_INACCESSIBLE";
     throw error;

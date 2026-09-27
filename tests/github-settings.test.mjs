@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   compareGithubSettings,
   configuredMergeMethods,
+  githubApi,
   loadExpectedSettings,
   rulesetPayload,
 } from "../scripts/github-repository-settings.mjs";
@@ -148,4 +149,22 @@ test("missing or weakened release tag ruleset fails", () => {
     const tag = state.rulesets.find((ruleset) => ruleset.target === "tag");
     tag.rules = tag.rules.filter((rule) => rule.type !== "update");
   }), /missing update rule/);
+});
+
+test("authentication failures fail closed without reflecting token or provider response text", async () => {
+  await assert.rejects(githubApi("/repos/Wizard-Gang/baseline"), (error) => error.code === "GITHUB_AUTH_REQUIRED");
+  const token = "fixture-token-never-print";
+  const fetchImpl = async () => ({ status: 403, text: async () => `denied ${token}` });
+  await assert.rejects(
+    githubApi("/repos/Wizard-Gang/baseline/rulesets", { token, fetchImpl }),
+    (error) => error.code === "GITHUB_ADMIN_INACCESSIBLE"
+      && /Administration read access/.test(error.message)
+      && !error.message.includes(token),
+  );
+  await assert.rejects(
+    githubApi("/repos/Wizard-Gang/baseline", { token, method: "PATCH", fetchImpl }),
+    (error) => error.code === "GITHUB_ADMIN_INACCESSIBLE"
+      && /Administration write access/.test(error.message)
+      && !error.message.includes(token),
+  );
 });
