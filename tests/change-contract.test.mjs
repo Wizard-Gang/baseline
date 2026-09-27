@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -36,7 +36,14 @@ const task = (number, type = 'TEST') => `### BASE-${String(number).padStart(3, '
 `;
 
 const plan = (...numbers) => `# Implementation plan\n\n## Open tasks\n\n${numbers.map((n) => task(n)).join('\n')}`;
-const emptyPlan = readFileSync(join(scriptRoot, 'implementation_plan.md'), 'utf8');
+const emptyPlan = `# Implementation plan
+
+## Open tasks
+
+The queue is empty. Select no implementation task.
+
+The next instruction must fill this queue through a controlled, plan-only change before implementation begins. Fetch current \`main\`, inspect open pull requests and reservations, and use the repository's next valid unassigned controlled ID. Keep this file tracked; do not delete it when the queue is empty.
+`;
 
 const record = (number, parent = null, type = 'TEST') => ({
   sha: `sha-${number}`,
@@ -128,7 +135,13 @@ test('PR binds exact head, branch, next ID, single commit, and first task retire
 });
 
 function command(cwd, program, args, env = {}) {
-  const result = spawnSync(program, args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  const childEnv = { ...process.env };
+  for (const name of [
+    'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_SHA',
+    'CHANGE_BASE_SHA', 'CHANGE_HEAD_SHA', 'CHANGE_HEAD_REF',
+    'CHANGE_PR_TITLE', 'CHANGE_PR_BODY',
+  ]) delete childEnv[name];
+  const result = spawnSync(program, args, { cwd, encoding: 'utf8', env: { ...childEnv, ...env } });
   if (result.error) throw result.error;
   return result;
 }
