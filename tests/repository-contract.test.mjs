@@ -10,6 +10,7 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 const specimen = () => ({
   ci: read('.github/workflows/ci.yml'),
   release: read('.github/workflows/release.yml'),
+  cutter: read('.github/workflows/release-cutter.yml'),
   pkg: JSON.parse(read('package.json')),
   lock: JSON.parse(read('package-lock.json')),
   phase: JSON.parse(read('config/phase.json')),
@@ -39,7 +40,7 @@ test('broader CI token and missing security check fail the provider contract', (
   assert.ok(failures.some((failure) => failure.includes('provider required checks')));
 });
 
-test('release publication cannot move to a manual trigger or lose attestation', () => {
+test('release publication cannot lose tag identity or attestation', () => {
   const input = specimen();
   input.release = input.release.replace("tags: ['v*']", 'branches: [main]')
     .replace('cancel-in-progress: false', 'cancel-in-progress: true')
@@ -48,6 +49,15 @@ test('release publication cannot move to a manual trigger or lose attestation', 
   assert.ok(failures.some((failure) => failure.includes('tag push trigger')));
   assert.ok(failures.some((failure) => failure.includes('cancel publication')));
   assert.ok(failures.some((failure) => failure.includes('full commit SHA')));
+});
+
+test('release cutter rejects a missing current-main gate or exact-tag dispatch', () => {
+  const input = specimen();
+  input.cutter = input.cutter.replace('git rev-parse origin/main', 'git rev-parse HEAD')
+    .replace('--ref "$RELEASE_TAG" -f expected_sha="$EXPECTED_SHA"', '--ref main');
+  const failures = validateRepositoryContract(input);
+  assert.ok(failures.some((failure) => failure.includes('exact current main')));
+  assert.ok(failures.some((failure) => failure.includes('exact tag and commit')));
 });
 
 test('workflows cannot call missing scripts, and phase cannot enable application code', () => {

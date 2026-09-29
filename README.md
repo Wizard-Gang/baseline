@@ -2,7 +2,7 @@
 
 `baseline` is the WizardGang change-management reference implementation. It contains governance, executable repository contracts, CI, provider policy, and a release path. It intentionally contains no application or product code.
 
-The contract gate is `npm ci && npm run check && npm run audit:dependencies`. A controlled change then requires an exact-head pull request, current required checks, a squash merge, post-merge verification, and, when releasing, an annotated semantic tag whose source and assets reproduce. [Change management](docs/CHANGE-MANAGEMENT.md), [release management](docs/RELEASE-MANAGEMENT.md), and [ownership](docs/OWNERSHIP.md) define the operating sequence.
+The contract gate is `npm ci && npm run check && npm run audit:dependencies`. A controlled change then requires an exact-head pull request, current required checks, a squash merge, and post-merge verification. Successful exact-current-main CI cuts or verifies an annotated semantic tag and explicitly dispatches Release at that tag; the source and assets must reproduce. [Change management](docs/CHANGE-MANAGEMENT.md), [release management](docs/RELEASE-MANAGEMENT.md), and [ownership](docs/OWNERSHIP.md) define the operating sequence.
 
 [The control map](docs/CONTROL-MAP.md) lists every committed guard, its authority, and the evidence needed to verify it. Repository auto-merge is available for an individually configured PR; required checks, squash-only merge, and the controlled record still govern that PR.
 
