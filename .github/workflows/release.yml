@@ -95,6 +95,7 @@ jobs:
           [[ "$GITHUB_REF" == "refs/tags/$GITHUB_REF_NAME" ]]
           if [ -n "$EXPECTED_SHA" ]; then
             [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ]
+          fi
       - name: Reverify annotated tag identity
         run: node scripts/check-release.mjs identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
       - name: Rebuild and compare clean-job digest

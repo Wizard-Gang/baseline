@@ -50,6 +50,10 @@ jobs:
             git merge-base --is-ancestor "$release_sha" origin/main || { echo "::error::$tag is outside accepted main"; exit 1; }
             tagged_version="$(git show "$tag:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
             [ "$tagged_version" = "$version" ] || { echo "::error::$tag package version differs"; exit 1; }
+            if [ "$release_sha" != "$VALIDATED_SHA" ]; then
+              echo "$tag remains at its earlier accepted commit; no retry from a later same-version main run."
+              exit 0
+            fi
           else
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

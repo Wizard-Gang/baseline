@@ -1,6 +1,6 @@
 {
   "name": "baseline",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "WizardGang change-management reference implementation",
@@ -10,7 +10,8 @@
   },
   "packageManager": "npm@12.1.0",
   "scripts": {
-    "check": "npm run test:plan-queue && node --test tests/*.test.mjs && node scripts/check-repository.mjs && node scripts/check-change.mjs",
+    "check": "npm run test:plan-queue && npm run check:workflow-shell && node --test tests/*.test.mjs && node scripts/check-repository.mjs && node scripts/check-change.mjs",
+    "check:workflow-shell": "node scripts/check-workflow-shell.mjs",
     "check:change": "node scripts/check-change.mjs",
     "check:repository": "node scripts/check-repository.mjs",
     "check:release": "node scripts/check-release.mjs",

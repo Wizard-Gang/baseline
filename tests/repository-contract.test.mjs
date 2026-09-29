@@ -60,6 +60,12 @@ test('release cutter rejects a missing current-main gate or exact-tag dispatch',
   assert.ok(failures.some((failure) => failure.includes('exact tag and commit')));
 });
 
+test('release cutter leaves an older same-version tag in place', () => {
+  const input = specimen();
+  input.cutter = input.cutter.replace('[ "$release_sha" != "$VALIDATED_SHA" ]', '[ "$release_sha" = "$VALIDATED_SHA" ]');
+  assert.ok(validateRepositoryContract(input).some((failure) => failure.includes('older same-version tags')));
+});
+
 test('workflows cannot call missing scripts, and phase cannot enable application code', () => {
   const input = specimen();
   input.pkg.scripts['audit:dependencies'] = 'echo audit skipped';
