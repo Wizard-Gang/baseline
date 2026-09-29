@@ -46,7 +46,7 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
-  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings']) {
+  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings']) {
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
   }
 
@@ -101,6 +101,7 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
     /workflow_run\.conclusion == 'success'[\s\S]*workflow_run\.event == 'push'[\s\S]*workflow_run\.head_branch == 'main'/);
   requireMatch(failures, 'Release Cutter must check exact current main', cutter, /git rev-parse origin\/main/);
   requireMatch(failures, 'Release Cutter must create an annotated exact-head tag', cutter, /git tag -a "\$tag" "\$VALIDATED_SHA"/);
+  requireMatch(failures, 'Release Cutter must leave older same-version tags untouched', cutter, /\[ "\$release_sha" != "\$VALIDATED_SHA" \]/);
   requireMatch(failures, 'Release Cutter must dispatch the exact tag and commit', cutter,
     /gh workflow run release\.yml --ref "\$RELEASE_TAG" -f expected_sha="\$EXPECTED_SHA"/);
   for (const permission of ['contents: write', 'actions: write']) {
@@ -142,6 +143,7 @@ export function validateRepositoryAt(root) {
     '.node-version', 'package-lock.json', 'implementation_plan.md', '.github/pull_request_template.md',
     'tests/change-contract.test.mjs', 'tests/github-settings.test.mjs',
     'tests/release-contract.test.mjs', 'tests/repository-contract.test.mjs',
+    'scripts/check-workflow-shell.mjs', 'tests/workflow-shell.test.mjs',
     '.github/workflows/release-cutter.yml',
   ];
   const failures = [];
