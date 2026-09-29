@@ -64,6 +64,10 @@ export function compareGithubSettings(expected, actual) {
     }
   }
 
+  if (actual?.immutableReleases?.enabled !== expected.immutableReleases) {
+    failures.push(`immutable Releases: expected ${expected.immutableReleases}, got ${actual?.immutableReleases?.enabled}`);
+  }
+
   if (!Array.isArray(rulesets)) {
     failures.push("repository rulesets are inaccessible or missing");
     return failures;
@@ -183,7 +187,7 @@ export function rulesetPayload(expected, ruleset) {
 
 export async function githubApi(
   path,
-  { token, method = "GET", body, fetchImpl = fetch } = {},
+  { token, method = "GET", body, fetchImpl = fetch, notFoundAsNull = false } = {},
 ) {
   if (!token) {
     const error = new Error("GH_ADMIN_TOKEN or GH_TOKEN is required");
@@ -211,6 +215,8 @@ export async function githubApi(
     throw error;
   }
 
+  if (response.status === 404 && notFoundAsNull) return null;
+
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`GitHub API ${method} ${path} failed (${response.status}): ${detail}`);
@@ -227,12 +233,15 @@ export async function fetchLiveGithubSettings(
   const [owner, name] = expected.repository.split("/");
   const root = `/repos/${owner}/${name}`;
   const repository = await githubApi(root, { token, fetchImpl });
+  const immutableReleases = await githubApi(`${root}/immutable-releases`, {
+    token, fetchImpl, notFoundAsNull: true,
+  }) ?? { enabled: false };
   const summaries = await githubApi(`${root}/rulesets`, { token, fetchImpl });
   const rulesets = [];
   for (const summary of summaries) {
     rulesets.push(await githubApi(`${root}/rulesets/${summary.id}`, { token, fetchImpl }));
   }
-  return { repository, rulesets };
+  return { repository, immutableReleases, rulesets };
 }
 
 export async function verifyLiveGithubSettings(expected, options = {}) {

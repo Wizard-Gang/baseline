@@ -25,4 +25,4 @@ npm run check
 npm run audit:dependencies
 ```
 
-`npm run check` needs no GitHub credential. Live provider checks use `GH_ADMIN_TOKEN`, or `GH_TOKEN` when it has the required permissions. `npm run verify:github-settings` only reads repository metadata and rulesets; `npm run apply:github-settings` changes only the committed merge settings and rulesets, then independently re-reads them. Keep the token in process or provider secret state and never print it.
+`npm run check` needs no GitHub credential. Live provider checks use `GH_ADMIN_TOKEN`, or `GH_TOKEN` when it has the required permissions. `npm run verify:github-settings` only reads repository metadata, immutable Releases, and rulesets; `npm run apply:github-settings` changes only the committed merge settings, immutable Releases, and rulesets, then independently re-reads them. Keep the token in process or provider secret state and never print it.
