@@ -30,7 +30,7 @@ function sameSet(actual, expected) {
   return actual.length === expected.length && expected.every((entry) => actual.includes(entry));
 }
 
-export function validateRepositoryContract({ ci, release, pkg, lock, phase, provider }) {
+export function validateRepositoryContract({ ci, release, cutter, pkg, lock, phase, provider }) {
   const failures = [];
   if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) failures.push('package.json owns a semantic version');
   if (pkg.private !== true) failures.push('source-only seed must be private to npm publication');
@@ -70,8 +70,11 @@ export function validateRepositoryContract({ ci, release, pkg, lock, phase, prov
   requireMatch(failures, 'security must run the dependency advisory gate', block(ci, 'security', 2), /run: npm run audit:dependencies/);
 
   const releaseEvents = keys(block(release, 'on'), 2);
-  if (!sameSet(releaseEvents, ['push'])) failures.push('Release must trigger only from tag pushes');
+  if (!sameSet(releaseEvents, ['push', 'workflow_dispatch'])) failures.push('Release must trigger from tag pushes or explicit cutter dispatch');
   requireMatch(failures, 'Release must use tag push trigger', block(release, 'push', 2), /tags: \['v\*'\]/);
+  requireMatch(failures, 'Release dispatch must bind accepted commit', block(release, 'workflow_dispatch', 2), /expected_sha:/);
+  requireMatch(failures, 'Release must preserve tag ref for attestation', release, /\[\[ "\$GITHUB_REF" == "refs\/tags\/\$GITHUB_REF_NAME" \]\]/);
+  requireMatch(failures, 'Release must compare dispatched commit', release, /\[ "\$\(git rev-parse HEAD\)" = "\$EXPECTED_SHA" \]/);
   if (block(release, 'permissions')?.trim() !== 'contents: read') failures.push('Release default token must be read-only');
   requireMatch(failures, 'Release must serialize by tag', block(release, 'concurrency'), /group: release-\$\{\{ github\.ref \}\}/);
   requireMatch(failures, 'Release must not cancel publication', block(release, 'concurrency'), /cancel-in-progress: false/);
@@ -92,11 +95,23 @@ export function validateRepositoryContract({ ci, release, pkg, lock, phase, prov
   requireMatch(failures, 'Publication must verify artifact attestation', publish, /check-release\.mjs attestation/);
   requireMatch(failures, 'Publication must reconcile release state', publish, /scripts\/publish-release\.mjs/);
 
-  const allUses = [...`${ci}\n${release}`.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)].map((match) => match[1]);
+  const cutterEvents = keys(block(cutter, 'on'), 2);
+  if (!sameSet(cutterEvents, ['workflow_run'])) failures.push('Release Cutter must follow CI workflow_run only');
+  requireMatch(failures, 'Release Cutter must require successful main push CI', cutter,
+    /workflow_run\.conclusion == 'success'[\s\S]*workflow_run\.event == 'push'[\s\S]*workflow_run\.head_branch == 'main'/);
+  requireMatch(failures, 'Release Cutter must check exact current main', cutter, /git rev-parse origin\/main/);
+  requireMatch(failures, 'Release Cutter must create an annotated exact-head tag', cutter, /git tag -a "\$tag" "\$VALIDATED_SHA"/);
+  requireMatch(failures, 'Release Cutter must dispatch the exact tag and commit', cutter,
+    /gh workflow run release\.yml --ref "\$RELEASE_TAG" -f expected_sha="\$EXPECTED_SHA"/);
+  for (const permission of ['contents: write', 'actions: write']) {
+    if (!block(cutter, 'permissions')?.includes(permission)) failures.push(`Release Cutter requires scoped ${permission}`);
+  }
+
+  const allUses = [...`${ci}\n${release}\n${cutter}`.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)].map((match) => match[1]);
   if (!allUses.length || allUses.some((use) => !/^actions\/[a-z0-9-]+@[0-9a-f]{40}$/.test(use))) {
     failures.push('every action must be GitHub-owned and pinned to a full commit SHA');
   }
-  for (const match of `${ci}\n${release}`.matchAll(/\bnpm run ([\w:-]+)/g)) {
+  for (const match of `${ci}\n${release}\n${cutter}`.matchAll(/\bnpm run ([\w:-]+)/g)) {
     if (!pkg.scripts?.[match[1]]) failures.push(`workflow references missing package script ${match[1]}`);
   }
   const requiredChecks = provider?.requiredStatusChecks;
@@ -127,6 +142,7 @@ export function validateRepositoryAt(root) {
     '.node-version', 'package-lock.json', 'implementation_plan.md', '.github/pull_request_template.md',
     'tests/change-contract.test.mjs', 'tests/github-settings.test.mjs',
     'tests/release-contract.test.mjs', 'tests/repository-contract.test.mjs',
+    '.github/workflows/release-cutter.yml',
   ];
   const failures = [];
   for (const path of required) {
@@ -142,6 +158,7 @@ export function validateRepositoryAt(root) {
   return validateRepositoryContract({
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),
+    cutter: read('.github/workflows/release-cutter.yml'),
     pkg: JSON.parse(read('package.json')),
     lock: JSON.parse(read('package-lock.json')),
     phase: JSON.parse(read('config/phase.json')),

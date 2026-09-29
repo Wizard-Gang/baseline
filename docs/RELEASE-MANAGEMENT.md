@@ -4,14 +4,14 @@
 
 ## Tag gate
 
-After merged `main` and its post-merge CI are verified, the release operator creates an annotated semantic tag at the exact `main` commit and pushes it. The tag ruleset blocks updates and deletions. A tag-triggered workflow independently proves:
+After merged `main` and its post-merge CI are verified, Release Cutter creates or verifies the annotated semantic tag at the exact accepted commit. It explicitly dispatches Release at the tag ref with that commit because a tag pushed with the workflow token does not trigger another workflow. A later same-version merge never moves the tag. The tag ruleset blocks updates and deletions. The Release workflow also accepts an intentional tag push and independently proves:
 
 - the tag name is exact semantic `vX.Y.Z`, its Git object type is `tag`, and it resolves to checked-out `HEAD`;
 - the commit is reachable from current `main` and its `package.json` version equals the tag;
 - a clean checkout with the pinned toolchain passes `npm ci`, `npm run check`, and `npm run audit:dependencies`;
 - a source archive reproduced from that tag has the same SHA-256 in two clean jobs.
 
-The release workflow is serialized per tag, never canceled mid-publication, and is triggered only by tag pushes. Its verification job has read-only permissions. The publication job receives only `contents: write`, `id-token: write`, and `attestations: write`. It creates the deterministic `baseline-vX.Y.Z.tar.gz` archive using `git archive` and `gzip -n`, and a `SHA256SUMS` file. It checks the manifest before publication and generates a GitHub provenance attestation bound to the tag ref, source commit, repository, and signer workflow.
+The release workflow is serialized per tag and never canceled mid-publication. The explicit dispatch stays on the tag ref so the attestation binds to that ref. Its verification job has read-only permissions. The publication job receives only `contents: write`, `id-token: write`, and `attestations: write`. It creates the deterministic `baseline-vX.Y.Z.tar.gz` archive using `git archive` and `gzip -n`, and a `SHA256SUMS` file. It checks the manifest before publication and generates a GitHub provenance attestation bound to the tag ref, source commit, repository, and signer workflow.
 
 ## Retry-safe publication
 

@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Accepted main commit verified by Release Cutter
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +22,8 @@ jobs:
     name: reproduce
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
     outputs:
       archive-sha256: ${{ steps.archive.outputs.sha256 }}
       source-commit: ${{ steps.archive.outputs.commit }}
@@ -32,6 +40,14 @@ jobs:
         run: npm install --global npm@12.1.0
       - name: Fetch main for release reachability
         run: git fetch --force origin main:refs/remotes/origin/main
+      - name: Bind dispatch to exact tag and accepted commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/tags/$GITHUB_REF_NAME" ]]
+          if [ -n "$EXPECTED_SHA" ]; then
+            [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ]
+          fi
       - name: Install locked dependencies
         run: npm ci
       - name: Reproduce contract checks
@@ -56,6 +72,8 @@ jobs:
     needs: reproduce
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
     permissions:
       contents: write
       id-token: write
@@ -70,6 +88,13 @@ jobs:
           node-version-file: .node-version
       - name: Fetch main for release reachability
         run: git fetch --force origin main:refs/remotes/origin/main
+      - name: Rebind dispatch to exact tag and accepted commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/tags/$GITHUB_REF_NAME" ]]
+          if [ -n "$EXPECTED_SHA" ]; then
+            [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ]
       - name: Reverify annotated tag identity
         run: node scripts/check-release.mjs identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
       - name: Rebuild and compare clean-job digest

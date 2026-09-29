@@ -1,0 +1,73 @@
+name: Release Cutter
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  cut:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Cut or verify accepted version tag
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if [ "$(git rev-parse origin/main)" != "$VALIDATED_SHA" ]; then
+            echo "Validated main moved; the newer CI run owns release selection."
+            exit 0
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::package version is not exact semantic X.Y.Z"
+            exit 1
+          fi
+          tag="v$version"
+          release_sha="$VALIDATED_SHA"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch --force --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+            [ "$(git cat-file -t "refs/tags/$tag")" = tag ] || { echo "::error::$tag is lightweight"; exit 1; }
+            release_sha="$(git rev-parse "refs/tags/$tag^{commit}")"
+            git merge-base --is-ancestor "$release_sha" origin/main || { echo "::error::$tag is outside accepted main"; exit 1; }
+            tagged_version="$(git show "$tag:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+            [ "$tagged_version" = "$version" ] || { echo "::error::$tag package version differs"; exit 1; }
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$tag" "$VALIDATED_SHA" -m "$tag"
+            git push origin "refs/tags/$tag"
+          fi
+          remote_commit="$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk '{print $1}')"
+          [ "$remote_commit" = "$release_sha" ] || { echo "::error::remote tag identity mismatch"; exit 1; }
+          if gh release view "$tag" --json isDraft --jq '.isDraft' > "$RUNNER_TEMP/release-draft" 2>/dev/null; then
+            [ "$(cat "$RUNNER_TEMP/release-draft")" = false ] || { echo "::error::existing release is a draft"; exit 1; }
+            echo "$tag already has a published Release."
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "expected_sha=$release_sha" >> "$GITHUB_OUTPUT"
+      - name: Dispatch exact tag Release
+        if: steps.candidate.outputs.tag != ''
+        env:
+          RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
+          EXPECTED_SHA: ${{ steps.candidate.outputs.expected_sha }}
+        run: gh workflow run release.yml --ref "$RELEASE_TAG" -f expected_sha="$EXPECTED_SHA"
