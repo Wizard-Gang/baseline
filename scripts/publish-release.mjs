@@ -67,9 +67,19 @@ function api(runGh, path, allowed = [200]) {
 function remoteRelease(runGh, repo, tag) {
   // This call distinguishes an absent release from an inaccessible repository.
   api(runGh, `repos/${repo}`);
-  const response = api(runGh, `repos/${repo}/releases/tags/${tag}`, [200, 404]);
-  if (response.status === 404) return null;
+  // GitHub's releases/tags endpoint returns 404 for drafts. Resolve the
+  // draft or published release ID first, then read its full REST state.
+  const lookup = runGh(['release', 'view', tag, '--repo', repo, '--json', 'databaseId', '--jq', '.databaseId']);
+  if (lookup.error) throw lookup.error;
+  if (lookup.status !== 0) {
+    if (/release not found|HTTP 404/i.test(lookup.stderr ?? '')) return null;
+    throw new Error(`GitHub release lookup failed: ${(lookup.stderr || 'unknown error').trim()}`);
+  }
+  const id = lookup.stdout.trim();
+  if (!/^[1-9][0-9]*$/.test(id)) throw new Error('GitHub release lookup returned an invalid ID');
+  const response = api(runGh, `repos/${repo}/releases/${id}`);
   const value = response.body;
+  if (value?.tag_name !== tag) throw new Error(`GitHub release ID ${id} belongs to another tag`);
   if (!value || typeof value !== 'object') throw new Error('GitHub release response is missing');
   return {
     tagName: value.tag_name,
