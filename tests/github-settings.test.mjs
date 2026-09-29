@@ -21,6 +21,7 @@ function actual() {
       allow_auto_merge: expected.allowAutoMerge,
       delete_branch_on_merge: expected.deleteBranchOnMerge,
     },
+    immutableReleases: { enabled: expected.immutableReleases },
     rulesets: expected.rulesets.map((ruleset) => ({
       name: ruleset.name,
       target: ruleset.target,
@@ -69,6 +70,20 @@ test("repository identity and automatic branch deletion cannot drift", () => {
 
 test("auto-merge availability cannot drift", () => {
   assert.match(failuresFor((state) => { state.repository.allow_auto_merge = false; }), /auto-merge availability/);
+});
+
+test("disabled immutable Releases fail the provider contract", () => {
+  assert.match(failuresFor((state) => { state.immutableReleases.enabled = false; }), /immutable Releases: expected true, got false/);
+  assert.match(failuresFor((state) => { delete state.immutableReleases; }), /immutable Releases: expected true/);
+});
+
+test("disabled immutable Releases may be reported as HTTP 404", async () => {
+  const result = await githubApi("/repos/Wizard-Gang/baseline/immutable-releases", {
+    token: "fixture-token",
+    notFoundAsNull: true,
+    fetchImpl: async () => ({ status: 404, ok: false }),
+  });
+  assert.equal(result, null);
 });
 
 test("ruleset merge methods must match squash-only authority", () => {

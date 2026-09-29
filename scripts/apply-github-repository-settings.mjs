@@ -32,6 +32,10 @@ try {
     },
   });
 
+  if (expected.immutableReleases === true) {
+    await githubApi(`${root}/immutable-releases`, { token, method: "PUT" });
+  }
+
   const existing = await githubApi(`${root}/rulesets`, { token });
   for (const expectedRuleset of expected.rulesets) {
     const payload = rulesetPayload(expected, expectedRuleset);
