@@ -34,7 +34,7 @@ function response(status, body) {
 
 function mockGithub({ args, artifactBytes, manifestBytes, release = null, repositoryStatus = 200,
   tagCommit = COMMIT, immutableOnPublish = true, corruptDownload = false,
-  failUploadOnce = false, missingVerifyCapability = false } = {}) {
+  failUploadOnce = false, missingVerifyCapability = false, releaseLookupError = null } = {}) {
   const history = [];
   const bytes = new Map([[basename(args.artifactPath), artifactBytes], [basename(args.manifestPath), manifestBytes]]);
   let uploadFailed = false;
@@ -47,10 +47,16 @@ function mockGithub({ args, artifactBytes, manifestBytes, release = null, reposi
       if (path === `repos/${REPO}`) return response(repositoryStatus, repositoryStatus === 200 ? { full_name: REPO } : { message: 'denied' });
       if (path === `repos/${REPO}/git/ref/tags/${TAG}`) return response(200, { object: { type: 'tag', sha: TAG_OBJECT } });
       if (path === `repos/${REPO}/git/tags/${TAG_OBJECT}`) return response(200, { tag: TAG, object: { type: 'commit', sha: tagCommit } });
-      if (path === `repos/${REPO}/releases/tags/${TAG}`) return current ? response(200, current) : response(404, { message: 'Not Found' });
+      // GitHub does not expose drafts through this endpoint, even when gh release view finds them.
+      if (path === `repos/${REPO}/releases/tags/${TAG}`) return response(404, { message: 'Not Found' });
+      if (path === `repos/${REPO}/releases/123`) return current ? response(200, current) : response(404, { message: 'Not Found' });
       throw new Error(`unexpected API path: ${path}`);
     }
     if (group === 'attestation' && operation === 'verify') return { status: 0, stdout: '[{"verificationResult":{}}]' };
+    if (group === 'release' && operation === 'view') {
+      if (releaseLookupError) return { status: 1, stderr: releaseLookupError };
+      return current ? { status: 0, stdout: '123\n', stderr: '' } : { status: 1, stderr: 'release not found' };
+    }
     if (group === 'release' && operation === 'create') {
       current = { tag_name: TAG, draft: true, prerelease: false, immutable: false, published_at: null, assets: [] };
       return { status: 0, stdout: '' };
@@ -168,6 +174,14 @@ test('missing release attestation verification capability stops before mutation'
   fixture(({ args, artifactBytes, manifestBytes }) => {
     const github = mockGithub({ args, artifactBytes, manifestBytes, missingVerifyCapability: true });
     assert.throws(() => publishRelease({ ...args, runGh: github.runner }), /required gh release verify capability/);
+    assert.equal(github.history.filter((argv) => ['create', 'upload', 'edit'].includes(argv[1])).length, 0);
+  });
+});
+
+test('release lookup errors other than a missing release stop before mutation', () => {
+  fixture(({ args, artifactBytes, manifestBytes }) => {
+    const github = mockGithub({ args, artifactBytes, manifestBytes, releaseLookupError: 'HTTP 403: access denied' });
+    assert.throws(() => publishRelease({ ...args, runGh: github.runner }), /release lookup failed: HTTP 403/);
     assert.equal(github.history.filter((argv) => ['create', 'upload', 'edit'].includes(argv[1])).length, 0);
   });
 });
