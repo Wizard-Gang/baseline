@@ -51,6 +51,12 @@ export function validateRepositoryPaths(present, phase) {
   return failures;
 }
 
+// Owner-run Cloudflare token commands and the scripts they must run.
+export const TOKEN_SCRIPTS = Object.freeze({
+  'discover:cloudflare-token-targets': 'discover-cloudflare-token-targets.mjs',
+  'rotate:cloudflare-token': 'rotate-cloudflare-token.mjs',
+});
+
 // Baseline's workflows: its own CI and release path, plus the reusable deploy that only consumers call.
 export const WORKFLOWS = Object.freeze(['ci.yml', 'deploy-worker.yml', 'release-cutter.yml', 'release.yml']);
 
@@ -68,7 +74,7 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
-  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare', 'vendor:lock']) {
+  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare', 'vendor:lock', ...Object.keys(TOKEN_SCRIPTS)]) {
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
   }
   if (pkg.scripts?.['vendor:lock'] !== 'node scripts/vendor-lock.mjs') {
@@ -82,6 +88,18 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
   if (cloudflareRead.test(pkg.scripts?.check ?? '')) failures.push('npm run check must not read Cloudflare');
   for (const [name, workflow] of [['CI', ci], ['Release', release], ['Release cutter', cutter]]) {
     if (cloudflareRead.test(workflow ?? '')) failures.push(`${name} workflow must not read Cloudflare`);
+  }
+  // Token discovery and rotation are owner-run with runtime gh credentials: no other package script, and so not
+  // check, may reach them, and no workflow (the deploy included) may run them or write a GitHub secret.
+  for (const [name, file] of Object.entries(TOKEN_SCRIPTS)) {
+    if (pkg.scripts?.[name] !== `node scripts/${file}`) failures.push(`${name} must run scripts/${file}`);
+  }
+  const tokenTooling = /(?:discover|rotate)[:-]cloudflare-token|cloudflare-token-targets|secret\s+set/;
+  for (const [name, script] of Object.entries(pkg.scripts ?? {})) {
+    if (!Object.hasOwn(TOKEN_SCRIPTS, name) && tokenTooling.test(script)) failures.push(`package script ${name} must not run Cloudflare token tooling`);
+  }
+  for (const [name, workflow] of [['CI', ci], ['Release', release], ['Release cutter', cutter], ['Deploy', deploy]]) {
+    if (tokenTooling.test(workflow ?? '')) failures.push(`${name} workflow must not run Cloudflare token tooling`);
   }
 
   // Baseline never deploys: only consumers call deploy-worker.yml, and nothing of baseline's own runs wrangler or binds an environment.
@@ -204,6 +222,8 @@ export function validateRepositoryAt(root) {
     'tests/wrangler-conformance.test.mjs', 'tests/vendoring.test.mjs', 'tests/fixtures/wrangler-hexframe-f95b735.jsonc',
     DEPLOY_WORKFLOW, 'scripts/deploy-workflow-contract.mjs', 'scripts/workflow-yaml.mjs', 'tests/deploy-workflow-contract.test.mjs',
     'platform/deploy/README.md', 'platform/deploy/index.d.ts', 'platform/deploy/verify.mjs', 'tests/deploy-verify.test.mjs',
+    'scripts/cloudflare-token-targets.mjs', ...Object.values(TOKEN_SCRIPTS).map((file) => `scripts/${file}`),
+    'tests/cloudflare-token-discovery.test.mjs', 'tests/cloudflare-token-rotation.test.mjs', 'tests/fixtures/fake-gh.mjs',
   ];
   const failures = [];
   for (const path of required) {
