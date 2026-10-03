@@ -12,6 +12,7 @@ The contract gate is `npm ci && npm run check && npm run audit:dependencies`. A 
 
 1. Git source, test assertions, workflow files, and committed configuration define executable contracts.
 2. `config/github-repository-settings.json` is the desired GitHub provider state; live readback is required to claim convergence.
+   `config/cloudflare.json` is the desired Cloudflare state for the four `wizardgang.ai` Workers. `scripts/cloudflare-desired-state.mjs` keeps it exact and closed during `npm run check`; it holds names only, never an account ID, binding ID or secret value, and claims intent, not live convergence.
 3. Current-state policy documents describe responsibilities and intent.
 4. Git first-parent history, pull requests, workflow runs, annotated tags, Releases, and attestations are the historical evidence. The repository does not keep a parallel release ledger.
 

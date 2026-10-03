@@ -137,3 +137,20 @@ test('a repository copy passes with an empty platform/ and fails without the gra
   writeFileSync(join(copy, 'config/phase.json'), `${JSON.stringify(phase, null, 2)}\n`);
   assert.ok(validateRepositoryAt(copy).some((failure) => failure.includes('without the config/phase.json platform grant')));
 });
+
+test('a repository copy fails when the Cloudflare desired state drifts from the closed policy', (t) => {
+  const copy = mkdtempSync(join(tmpdir(), 'baseline-contract-'));
+  t.after(() => rmSync(copy, { recursive: true, force: true }));
+  cpSync(root, copy, {
+    recursive: true,
+    filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)),
+  });
+  const path = join(copy, 'config/cloudflare.json');
+  const state = JSON.parse(readFileSync(path, 'utf8'));
+  state.kv = ['wg-gateway-status-prod'];
+  writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
+  assert.ok(validateRepositoryAt(copy).includes('config/cloudflare.json: kv: KV namespaces are not allowed'));
+
+  rmSync(path);
+  assert.ok(validateRepositoryAt(copy).includes('missing or empty repository authority: config/cloudflare.json'));
+});

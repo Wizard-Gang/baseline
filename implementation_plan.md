@@ -34,11 +34,11 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 **Per-repo migrations (Phase 4).** These are not baseline tasks. Each repo queues its own after the baseline task it depends on has merged.
 
 - **Hexframe** adopts the vendored `wg-edge` shell. It collapses `env.production` into a conforming top-level `wrangler.jsonc` and moves to the BASE-021 deploy workflow. Its `ADMIN_*` secrets are deleted in Phase 1. The Worker name `hexframe` already matches its target.
-- **WizardGang** becomes the `wizardgang` Worker with `www` as an alias. It adopts the shell and the deploy workflow, and removes YarReader (19 tracked files on `ad3f0db`). It deletes its Cloudflare token scripts once BASE-022 owns them.
+- **WizardGang** becomes the `wizardgang` Worker with `www` as an alias. It moves to the shared compatibility date and `nodejs_compat`, dropping `assets_navigation_has_no_effect`. It adopts the shell and the deploy workflow, and removes YarReader (19 tracked files on `ad3f0db`). It deletes its Cloudflare token scripts once BASE-022 owns them.
   - The SharkTank proxy removal that was blocked on ST-145 is already done (WG-116). Nothing remains for it.
 - **The demo** becomes the `demo` Worker on the shared D1 and R2. That means migrating the useful `demo-blob` rows into `records`/`events` with TTLs and moving the `wizardgang-demo-r2` objects under `demo/`.
   - It moves `CLOUDFLARE_API_TOKEN` from repo level to a `production` environment.
-  - It replaces `DEMO_ADMIN_*` with the shell's operator gate.
+  - It replaces `DEMO_ADMIN_*` with the shell's operator gate and removes them from its `config/worker-secrets.json`, so its secrets match the 17 names declared in `config/cloudflare.json`.
   - DEMO-431 (release and deployment tools) and DEMO-443 (Deploy workflow logic) overlap with BASE-021. Recommended default: the demo re-scopes both to call the reusable workflow instead of porting its own deploy tooling.
 - **SharkTank** becomes the `sharktank` Worker at a release boundary. The owner's direction is a rehearsed Durable Object `transferred_classes` migration from `wizardgangprod`. After ST-144 and ST-149, no durable DO state is planned to remain, so the rehearsal must confirm what (if anything) the transfer still carries. The open decision below covers this.
 - **YarReader** gets a tombstone (private and archived, like the other retired repos). It has no Cloudflare footprint.
@@ -57,29 +57,7 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 - The Cloudflare account ID comes from `CLOUDFLARE_ACCOUNT_ID` at runtime and is never committed.
 - Platform code is dependency-free ESM JavaScript with JSDoc types and a hand-written `.d.ts`. It runs on Node 26 for tests and on Workers in consumers, so `npm run check` stays credential-free with no new runtime dependencies.
 - Provider-reading commands stay outside `npm run check` and are tested against recorded fixtures.
-
-### BASE-016 — [OPS] Declare the Cloudflare desired state
-
-- Dependency: BASE-015 merged.
-- Why: No committed authority defines the intended Cloudflare shape. Drift such as orphan Workers, empty stores, dead secrets and inconsistent compatibility dates is invisible until someone audits by hand.
-- Scope: Add `config/cloudflare.json` and a pure validator module with tests. Desired state, exact and closed:
-  - Workers: `wizardgang`, `demo`, `sharktank` and `hexframe`, each with its owning GitHub repository and `production` environment.
-  - Exactly one custom-domain host per Worker (its label under `wizardgang.ai`, or the apex for `wizardgang`), plus `www.wizardgang.ai` as an alias on `wizardgang`. No zone routes.
-  - Storage:
-    - one D1 database `wizardgang`;
-    - one R2 bucket `wizardgang` with a `<app>/` prefix per Worker and lifecycle rules (aborting incomplete multipart uploads, plus each prefix's declared object expiry, starting with the demo's visitor uploads);
-    - zero KV namespaces.
-  - Durable Objects: `demo:DemoCoordinator` and `sharktank:Room` only.
-  - Crons: the demo's `*/5 * * * *` only (SharkTank's cron goes with ST-148).
-  - One shared compatibility date and flag set: the newest live date at task time or later, and `nodejs_compat`. Observability on, workers.dev off and preview URLs off for every Worker.
-  - Secrets Store secret names: `WG_OPS_TOKEN` and `WG_SESSION_KEY`.
-  - Declared per-Worker secret names, fixed from each repo's `origin/main` at task time:
-    - `wizardgang`, `sharktank` and `hexframe` declare none;
-    - the demo keeps its product OAuth, GitHub, webhook and identity secrets, drops `DEMO_ADMIN_*`, and keeps a read-only usage token only under the usage-reporting default.
-- Non-goals: No account ID, token value, binding ID or live read. No consumer, provider or secret change.
-- Acceptance: The validator rejects an unknown key, a duplicate host, a second D1, R2 or Store, any KV, an undeclared DO class or cron, a committed account ID, and a secret value field. The committed file passes.
-- Validation: Pinned `npm ci`, focused config tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: The preamble of this plan, the 2026-10-03 live read, `config/phase.json` and `docs/CONTROL-MAP.md`.
+- `config/cloudflare.json` is the desired Cloudflare state, and `scripts/cloudflare-desired-state.mjs` is its closed validator, enforced by the repository contract. Later tasks read the Workers, hosts, storage names, secret names and settings from it rather than restating them. Its compatibility date is 2026-08-31, the newest live date on 2026-10-03, with `nodejs_compat` as the only flag. The demo declares 17 Worker secret names from `config/worker-secrets.json` on `3693e71`, without `DEMO_ADMIN_*`; the other three Workers declare none. The R2 bucket expires `demo/uploads/` after 1 day, matching the demo's 24-hour visitor uploads.
 
 ### BASE-017 — [OPS] Add a read-only Cloudflare drift check
 
