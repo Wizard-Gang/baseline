@@ -1,0 +1,160 @@
+name: Deploy Worker
+
+# Reusable only. A consuming repository calls this from its own release path with its annotated release tag.
+# Baseline itself never triggers or calls it; the repository contract enforces that.
+on:
+  workflow_call:
+    inputs:
+      worker:
+        description: Worker label declared in the vendored platform/conformance/desired.mjs
+        required: true
+        type: string
+      tag:
+        description: Annotated semantic release tag vX.Y.Z to deploy
+        required: true
+        type: string
+      expected_sha:
+        description: Full commit the tag must point to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker-${{ inputs.worker }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WORKER: ${{ inputs.worker }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+    outputs:
+      url: ${{ steps.host.outputs.url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Bind the annotated tag to package.json and the expected commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WORKER" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "::error::invalid Worker label"; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "::error::tag is not exact semantic vX.Y.Z"; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::expected_sha is not a full commit"; exit 1; }
+          git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          [ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag ] || { echo "::error::$RELEASE_TAG is lightweight"; exit 1; }
+          [ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$EXPECTED_SHA" ] || { echo "::error::$RELEASE_TAG does not point to $EXPECTED_SHA"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ] || { echo "::error::checkout is not $EXPECTED_SHA"; exit 1; }
+          version="$(node -p "require('./package.json').version")"
+          [ "v$version" = "$RELEASE_TAG" ] || { echo "::error::package.json version $version does not match $RELEASE_TAG"; exit 1; }
+          git fetch --force --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$EXPECTED_SHA" refs/remotes/origin/main || { echo "::error::$EXPECTED_SHA is outside main"; exit 1; }
+      - name: Install the pinned npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager="$(node -p "require('./package.json').packageManager || ''")"
+          [[ "$manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::packageManager must pin an exact npm"; exit 1; }
+          npm install --global "$manager"
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reproduce the tagged source checks
+        run: npm run check
+      - name: Check the vendored platform pin
+        run: node platform/conformance/cli.mjs pin
+      - name: Check the Worker config
+        run: node platform/conformance/cli.mjs wrangler --worker "$WORKER"
+      - name: Resolve the declared host
+        id: host
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(node platform/deploy/verify.mjs host --worker "$WORKER")"
+          echo "url=https://$host" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ needs.verify.outputs.url }}
+    env:
+      WORKER: ${{ inputs.worker }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Rebind the annotated tag to the verified commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          [ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag ] || { echo "::error::$RELEASE_TAG is lightweight"; exit 1; }
+          [ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$EXPECTED_SHA" ] || { echo "::error::$RELEASE_TAG moved"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ] || { echo "::error::checkout is not $EXPECTED_SHA"; exit 1; }
+          manager="$(node -p "require('./package.json').packageManager || ''")"
+          [[ "$manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::packageManager must pin an exact npm"; exit 1; }
+          npm install --global "$manager"
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build the tagged Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          WG_VERSION="${RELEASE_TAG#v}" WG_COMMIT="$EXPECTED_SHA" npm run build --if-present
+      - name: Deploy with the locked wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "::error::the production environment must hold CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          npx --no-install wrangler --version
+          # Provisioning off: an unresolved binding fails the deploy instead of creating D1 wizardgang or any other resource.
+          WRANGLER_OUTPUT_FILE_PATH="$RUNNER_TEMP/wrangler-deploy.ndjson" npx --no-install wrangler deploy \
+            --experimental-provision=false --experimental-auto-create=false \
+            --tag "$RELEASE_TAG" --message "$RELEASE_TAG $EXPECTED_SHA"
+      - name: Confirm the new version serves 100% of traffic
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            npx --no-install wrangler deployments status --name "$WORKER" --json > "$RUNNER_TEMP/wrangler-deployment-status.json"
+            if node platform/deploy/verify.mjs traffic --worker "$WORKER" --deploy-output "$RUNNER_TEMP/wrangler-deploy.ndjson" \
+              --status "$RUNNER_TEMP/wrangler-deployment-status.json"; then
+              exit 0
+            fi
+            echo "Deployment status not settled on attempt $attempt/12."
+            sleep 5
+          done
+          echo "::error::the deployed version did not reach 100% of traffic"
+          exit 1
+      - name: Confirm the public /version.json identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node platform/deploy/verify.mjs version --worker "$WORKER" --version "${RELEASE_TAG#v}" --commit "$EXPECTED_SHA"
