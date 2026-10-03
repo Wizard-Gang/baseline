@@ -136,15 +136,20 @@ test('platform/ is accepted only under the grant and never unlocks application p
   }
 });
 
-test('a repository copy passes with an empty platform/ and fails without the grant or with a forbidden path', (t) => {
+test('a repository copy passes with the wg-edge platform/ and fails without the grant, a shell file or with a forbidden path', (t) => {
   const copy = mkdtempSync(join(tmpdir(), 'baseline-contract-'));
   t.after(() => rmSync(copy, { recursive: true, force: true }));
   cpSync(root, copy, {
     recursive: true,
     filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)),
   });
-  mkdirSync(join(copy, 'platform'));
   assert.deepEqual(validateRepositoryAt(copy), []);
+
+  const shellFile = join(copy, 'platform/wg-edge/auth.mjs');
+  const shellSource = readFileSync(shellFile, 'utf8');
+  rmSync(shellFile);
+  assert.ok(validateRepositoryAt(copy).includes('missing or empty repository authority: platform/wg-edge/auth.mjs'));
+  writeFileSync(shellFile, shellSource);
 
   mkdirSync(join(copy, 'workers'));
   assert.ok(validateRepositoryAt(copy).includes('application path exists before contract proof: workers'));
