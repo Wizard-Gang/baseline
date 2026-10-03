@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
 
 function block(source, key, indent = 0) {
   const lines = source.split('\n');
@@ -181,6 +182,7 @@ export function validateRepositoryAt(root) {
     'tests/release-contract.test.mjs', 'tests/repository-contract.test.mjs',
     'scripts/check-workflow-shell.mjs', 'tests/workflow-shell.test.mjs',
     '.github/workflows/release-cutter.yml', 'config/phase.json',
+    'config/cloudflare.json', 'scripts/cloudflare-desired-state.mjs', 'tests/cloudflare-desired-state.test.mjs',
   ];
   const failures = [];
   for (const path of required) {
@@ -195,7 +197,9 @@ export function validateRepositoryAt(root) {
     .map((path) => [path, statSync(join(root, path)).isDirectory()]));
   failures.push(...validateRepositoryPaths(present, JSON.parse(read('config/phase.json'))));
   if (failures.length) return failures;
-  return validateRepositoryContract({
+  failures.push(...validateCloudflareDesiredState(loadCloudflareDesiredState(root))
+    .map((failure) => `config/cloudflare.json: ${failure}`));
+  return [...failures, ...validateRepositoryContract({
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),
     cutter: read('.github/workflows/release-cutter.yml'),
@@ -203,5 +207,5 @@ export function validateRepositoryAt(root) {
     lock: JSON.parse(read('package-lock.json')),
     phase: JSON.parse(read('config/phase.json')),
     provider: JSON.parse(read('config/github-repository-settings.json')),
-  });
+  })];
 }
