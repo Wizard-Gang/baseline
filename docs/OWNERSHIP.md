@@ -9,6 +9,7 @@ The WizardGang repository owner is accountable for this contract and its GitHub 
 | Acceptance | Reviewer or repository owner | Exact-head checks, mergeability, policy readback |
 | Provider settings and security | Repository owner | Committed policy, authorized apply, live readback |
 | Shared edge code under `platform/` | Repository owner | `config/phase.json` platform grant, passing repository contract, no baseline deployment target |
+| Shared database schema (all DDL for D1 `wizardgang`) | Repository owner | Baseline is the only DDL owner: contiguous, SHA-256 pinned `platform/migrations/NNNN_name.sql` files passing the migration contract; consumers ship no DDL or app-specific tables; the owner applies migrations from the runbook with live readback |
 | Cloudflare desired state | Repository owner | `config/cloudflare.json` passing the closed validator; every provider change is owner-run with live readback through `npm run verify:cloudflare` |
 | Release | Release operator | Annotated tag, reproduced artifact, immutable Release, digest and attestation verification |
 

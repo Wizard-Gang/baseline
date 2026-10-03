@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
+import { validateMigrationsAt } from './migration-contract.mjs';
 
 function block(source, key, indent = 0) {
   const lines = source.split('\n');
@@ -198,6 +199,8 @@ export function validateRepositoryAt(root) {
       .map((file) => `platform/wg-edge/${file}`),
     'tests/wg-edge-http.test.mjs', 'tests/wg-edge-admin.test.mjs', 'tests/wg-edge-storage.test.mjs',
     'tests/wg-edge-shape.test.mjs', 'tests/fixtures/wg-edge-fakes.mjs',
+    'platform/migrations/0001_universal.sql', 'platform/migrations/pins.json', 'scripts/migration-contract.mjs',
+    'tests/migrations.test.mjs', 'tests/migration-contract.test.mjs',
   ];
   const failures = [];
   for (const path of required) {
@@ -214,6 +217,7 @@ export function validateRepositoryAt(root) {
   if (failures.length) return failures;
   failures.push(...validateCloudflareDesiredState(loadCloudflareDesiredState(root))
     .map((failure) => `config/cloudflare.json: ${failure}`));
+  failures.push(...validateMigrationsAt(root).map((failure) => `migrations: ${failure}`));
   return [...failures, ...validateRepositoryContract({
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),
