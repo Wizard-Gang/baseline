@@ -9,7 +9,7 @@ The WizardGang repository owner is accountable for this contract and its GitHub 
 | Acceptance | Reviewer or repository owner | Exact-head checks, mergeability, policy readback |
 | Provider settings and security | Repository owner | Committed policy, authorized apply, live readback |
 | Shared edge code under `platform/` | Repository owner | `config/phase.json` platform grant, passing repository contract, no baseline deployment target |
-| Cloudflare desired state | Repository owner | `config/cloudflare.json` passing the closed validator; every provider change is owner-run with live readback |
+| Cloudflare desired state | Repository owner | `config/cloudflare.json` passing the closed validator; every provider change is owner-run with live readback through `npm run verify:cloudflare` |
 | Release | Release operator | Annotated tag, reproduced artifact, immutable Release, digest and attestation verification |
 
 Security reports go through [SECURITY.md](../SECURITY.md). High-risk changes require explicit rollback or forward-fix controls in the controlled record. Provider access failures block acceptance rather than silently delegating authority to a local assumption.

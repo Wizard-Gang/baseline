@@ -19,6 +19,7 @@
     "audit:dependencies": "npm audit --audit-level=high",
     "verify:github-settings": "node scripts/verify-github-repository-settings.mjs",
     "apply:github-settings": "node scripts/apply-github-repository-settings.mjs",
+    "verify:cloudflare": "node scripts/verify-cloudflare.mjs",
     "test:plan-queue": "node scripts/check-portfolio-contract.mjs",
     "test:github-settings": "node --test tests/github-settings.test.mjs"
   }

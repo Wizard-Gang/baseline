@@ -1,0 +1,983 @@
+{
+  "recorded": "2026-10-03",
+  "source": "Cloudflare API v4, GET only, account-relative paths. Account, resource and certificate IDs and plain-text binding values are removed; secret entries are names only.",
+  "responses": {
+    "/workers/scripts": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "id": "hexframe",
+            "compatibility_date": "2026-06-28",
+            "compatibility_flags": [
+              "nodejs_compat"
+            ],
+            "handlers": [
+              "fetch"
+            ],
+            "has_assets": true,
+            "usage_model": "standard"
+          },
+          {
+            "id": "wizardgang-architecture-demo",
+            "compatibility_date": "2026-08-31",
+            "handlers": [
+              "fetch",
+              "scheduled"
+            ],
+            "has_assets": true,
+            "usage_model": "standard"
+          },
+          {
+            "id": "wizardgang-portfolio",
+            "compatibility_date": "2026-08-28",
+            "compatibility_flags": [
+              "assets_navigation_has_no_effect"
+            ],
+            "handlers": [
+              "fetch"
+            ],
+            "has_assets": true,
+            "usage_model": "standard"
+          },
+          {
+            "id": "wizardgang-portfolio-staging",
+            "compatibility_date": "2026-08-28",
+            "compatibility_flags": [
+              "assets_navigation_has_no_effect"
+            ],
+            "handlers": [
+              "fetch"
+            ],
+            "has_assets": true,
+            "usage_model": "standard"
+          },
+          {
+            "id": "wizardgangprod",
+            "compatibility_date": "2026-06-28",
+            "compatibility_flags": [
+              "nodejs_compat"
+            ],
+            "handlers": [
+              "fetch",
+              "scheduled"
+            ],
+            "has_assets": true,
+            "usage_model": "standard"
+          }
+        ]
+      }
+    },
+    "/workers/domains": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "zone_name": "wizardgang.ai",
+            "hostname": "wizardgang.ai",
+            "service": "wizardgang-portfolio",
+            "environment": "production",
+            "previews_enabled": false,
+            "enabled": true
+          },
+          {
+            "zone_name": "wizardgang.ai",
+            "hostname": "hexframe.wizardgang.ai",
+            "service": "hexframe",
+            "environment": "production",
+            "previews_enabled": false,
+            "enabled": true
+          },
+          {
+            "zone_name": "wizardgang.ai",
+            "hostname": "demo.wizardgang.ai",
+            "service": "wizardgang-architecture-demo",
+            "environment": "production",
+            "previews_enabled": false,
+            "enabled": true
+          },
+          {
+            "zone_name": "wizardgang.ai",
+            "hostname": "sharktank.wizardgang.ai",
+            "service": "wizardgangprod",
+            "environment": "production",
+            "previews_enabled": false,
+            "enabled": true
+          }
+        ],
+        "result_info": {
+          "page": 1,
+          "per_page": 4,
+          "count": 4,
+          "total_count": 4
+        }
+      }
+    },
+    "/workers/scripts/hexframe/settings": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "placement": {},
+          "compatibility_date": "2026-06-28",
+          "compatibility_flags": [
+            "nodejs_compat"
+          ],
+          "usage_model": "standard",
+          "tags": [
+            "cf:service=hexframe",
+            "cf:environment=production"
+          ],
+          "tail_consumers": [],
+          "logpush": false,
+          "observability": {
+            "enabled": true,
+            "head_sampling_rate": 1,
+            "redact_query_string": false,
+            "logs": {
+              "enabled": true,
+              "head_sampling_rate": 1,
+              "persist": true,
+              "invocation_logs": true
+            },
+            "traces": {
+              "enabled": false,
+              "persist": true,
+              "head_sampling_rate": 1
+            }
+          },
+          "annotations": {
+            "workers/triggered_by": "upload"
+          },
+          "bindings": [
+            {
+              "type": "secret_text",
+              "name": "ADMIN_PASSWORD"
+            },
+            {
+              "type": "secret_text",
+              "name": "ADMIN_SESSION_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "ADMIN_USERNAME"
+            },
+            {
+              "type": "assets",
+              "name": "ASSETS"
+            },
+            {
+              "type": "plain_text",
+              "name": "ENVIRONMENT"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/hexframe/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "name": "ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_SESSION_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "ADMIN_USERNAME",
+            "type": "secret_text"
+          }
+        ]
+      }
+    },
+    "/workers/scripts/hexframe/subdomain": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "enabled": false,
+          "previews_enabled": false
+        }
+      }
+    },
+    "/workers/scripts/hexframe/schedules": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "schedules": []
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-architecture-demo/settings": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "placement": {},
+          "compatibility_date": "2026-08-31",
+          "compatibility_flags": [],
+          "usage_model": "standard",
+          "tags": [],
+          "tail_consumers": [],
+          "logpush": false,
+          "annotations": {
+            "workers/triggered_by": "version_upload"
+          },
+          "bindings": [
+            {
+              "type": "assets",
+              "name": "ASSETS"
+            },
+            {
+              "type": "plain_text",
+              "name": "BILLING_DEMO_MONTHLY_BUDGET_USD"
+            },
+            {
+              "type": "plain_text",
+              "name": "CLOUDFLARE_ACCOUNT_ID"
+            },
+            {
+              "type": "secret_text",
+              "name": "CLOUDFLARE_API_TOKEN"
+            },
+            {
+              "type": "plain_text",
+              "name": "CLOUDFLARE_D1_DATABASE_ID"
+            },
+            {
+              "type": "plain_text",
+              "name": "CLOUDFLARE_DO_NAMESPACE"
+            },
+            {
+              "type": "plain_text",
+              "name": "CLOUDFLARE_R2_BUCKET"
+            },
+            {
+              "type": "plain_text",
+              "name": "CLOUDFLARE_WORKER_NAME"
+            },
+            {
+              "type": "secret_text",
+              "name": "DEMO_ADMIN_PASSWORD"
+            },
+            {
+              "type": "secret_text",
+              "name": "DEMO_ADMIN_USER"
+            },
+            {
+              "type": "durable_object_namespace",
+              "name": "DEMO_COORDINATOR",
+              "class_name": "DemoCoordinator"
+            },
+            {
+              "type": "d1",
+              "name": "DEMO_DB"
+            },
+            {
+              "type": "r2_bucket",
+              "name": "DEMO_R2"
+            },
+            {
+              "type": "secret_text",
+              "name": "DEMO_SESSION_SECRET"
+            },
+            {
+              "type": "plain_text",
+              "name": "DEPLOYED_SHA"
+            },
+            {
+              "type": "plain_text",
+              "name": "DEPLOYED_VERSION"
+            },
+            {
+              "type": "plain_text",
+              "name": "DEPLOYMENT_CI_STATUS"
+            },
+            {
+              "type": "plain_text",
+              "name": "DEPLOYMENT_ENVIRONMENT"
+            },
+            {
+              "type": "plain_text",
+              "name": "GITHUB_BRANCH"
+            },
+            {
+              "type": "secret_text",
+              "name": "GITHUB_CLIENT_ID"
+            },
+            {
+              "type": "secret_text",
+              "name": "GITHUB_CLIENT_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "GITHUB_DEMO_TOKEN"
+            },
+            {
+              "type": "secret_text",
+              "name": "GITHUB_READ_TOKEN"
+            },
+            {
+              "type": "plain_text",
+              "name": "GITHUB_REPO_URL"
+            },
+            {
+              "type": "secret_text",
+              "name": "GITHUB_WEBHOOK_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "GOOGLE_CLIENT_ID"
+            },
+            {
+              "type": "secret_text",
+              "name": "GOOGLE_CLIENT_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "IDENTITY_AUDIT_HMAC_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "IDENTITY_SESSION_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "MICROSOFT_CLIENT_ID"
+            },
+            {
+              "type": "secret_text",
+              "name": "MICROSOFT_CLIENT_SECRET"
+            },
+            {
+              "type": "secret_text",
+              "name": "MICROSOFT_TENANT_ID"
+            },
+            {
+              "type": "secret_text",
+              "name": "WEBHOOK_DEMO_SECRET"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-architecture-demo/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "name": "CLOUDFLARE_API_TOKEN",
+            "type": "secret_text"
+          },
+          {
+            "name": "DEMO_ADMIN_PASSWORD",
+            "type": "secret_text"
+          },
+          {
+            "name": "DEMO_ADMIN_USER",
+            "type": "secret_text"
+          },
+          {
+            "name": "DEMO_SESSION_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "GITHUB_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "GITHUB_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "GITHUB_DEMO_TOKEN",
+            "type": "secret_text"
+          },
+          {
+            "name": "GITHUB_READ_TOKEN",
+            "type": "secret_text"
+          },
+          {
+            "name": "GITHUB_WEBHOOK_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "GOOGLE_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "GOOGLE_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "IDENTITY_AUDIT_HMAC_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "IDENTITY_SESSION_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "MICROSOFT_CLIENT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "MICROSOFT_CLIENT_SECRET",
+            "type": "secret_text"
+          },
+          {
+            "name": "MICROSOFT_TENANT_ID",
+            "type": "secret_text"
+          },
+          {
+            "name": "WEBHOOK_DEMO_SECRET",
+            "type": "secret_text"
+          }
+        ]
+      }
+    },
+    "/workers/scripts/wizardgang-architecture-demo/subdomain": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "enabled": false,
+          "previews_enabled": false
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-architecture-demo/schedules": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "schedules": [
+            {
+              "cron": "*/5 * * * *",
+              "created_on": "2026-09-02T16:24:14.399872Z",
+              "modified_on": "2026-10-01T09:50:39.943382Z"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio/settings": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "placement": {},
+          "compatibility_date": "2026-08-28",
+          "compatibility_flags": [
+            "assets_navigation_has_no_effect"
+          ],
+          "usage_model": "standard",
+          "tags": [
+            "cf:service=wizardgang-portfolio",
+            "cf:environment=production"
+          ],
+          "tail_consumers": [],
+          "logpush": false,
+          "annotations": {
+            "workers/triggered_by": "version_upload"
+          },
+          "bindings": [
+            {
+              "type": "assets",
+              "name": "ASSETS"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": []
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio/subdomain": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "enabled": false,
+          "previews_enabled": false
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio/schedules": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "schedules": []
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio-staging/settings": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "placement": {},
+          "compatibility_date": "2026-08-28",
+          "compatibility_flags": [
+            "assets_navigation_has_no_effect"
+          ],
+          "usage_model": "standard",
+          "tags": [
+            "cf:service=wizardgang-portfolio",
+            "cf:environment=staging"
+          ],
+          "tail_consumers": [],
+          "logpush": false,
+          "annotations": {
+            "workers/triggered_by": "version_upload"
+          },
+          "bindings": [
+            {
+              "type": "assets",
+              "name": "ASSETS"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio-staging/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": []
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio-staging/subdomain": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "enabled": true,
+          "previews_enabled": false
+        }
+      }
+    },
+    "/workers/scripts/wizardgang-portfolio-staging/schedules": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "schedules": []
+        }
+      }
+    },
+    "/workers/scripts/wizardgangprod/settings": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "placement": {},
+          "compatibility_date": "2026-06-28",
+          "compatibility_flags": [
+            "nodejs_compat"
+          ],
+          "usage_model": "standard",
+          "tags": [
+            "cf:service=sharktank-local",
+            "cf:environment=wizardgangprod"
+          ],
+          "tail_consumers": [],
+          "logpush": false,
+          "annotations": {
+            "workers/triggered_by": "version_upload"
+          },
+          "bindings": [
+            {
+              "type": "assets",
+              "name": "ASSETS"
+            },
+            {
+              "type": "plain_text",
+              "name": "AUDIT_GENERATION"
+            },
+            {
+              "type": "plain_text",
+              "name": "BILLING_HARD_LIMIT_USD"
+            },
+            {
+              "type": "version_metadata",
+              "name": "CF_VERSION_METADATA"
+            },
+            {
+              "type": "plain_text",
+              "name": "ENVIRONMENT"
+            },
+            {
+              "type": "plain_text",
+              "name": "GAME_LOG_GENERATION"
+            },
+            {
+              "type": "durable_object_namespace",
+              "name": "LOBBY",
+              "class_name": "Lobby"
+            },
+            {
+              "type": "secret_text",
+              "name": "OPS_TOKEN"
+            },
+            {
+              "type": "secret_text",
+              "name": "OPS_USERNAME"
+            },
+            {
+              "type": "r2_bucket",
+              "name": "R2_ASSETS"
+            },
+            {
+              "type": "plain_text",
+              "name": "R2_BUCKET_NAME"
+            },
+            {
+              "type": "plain_text",
+              "name": "R2_PREFIX"
+            },
+            {
+              "type": "durable_object_namespace",
+              "name": "ROOM",
+              "class_name": "Room"
+            },
+            {
+              "type": "plain_text",
+              "name": "SHARKTANK_RELEASE"
+            },
+            {
+              "type": "plain_text",
+              "name": "SHARKTANK_RELEASE_REVISION"
+            }
+          ]
+        }
+      }
+    },
+    "/workers/scripts/wizardgangprod/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "name": "OPS_TOKEN",
+            "type": "secret_text"
+          },
+          {
+            "name": "OPS_USERNAME",
+            "type": "secret_text"
+          }
+        ]
+      }
+    },
+    "/workers/scripts/wizardgangprod/subdomain": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "enabled": false,
+          "previews_enabled": false
+        }
+      }
+    },
+    "/workers/scripts/wizardgangprod/schedules": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "schedules": [
+            {
+              "cron": "17 3 * * *",
+              "created_on": "2026-08-22T20:51:10.224506Z",
+              "modified_on": "2026-10-02T21:41:30.20837Z"
+            }
+          ]
+        }
+      }
+    },
+    "/d1/database": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "uuid": "d1-demo-blob",
+            "name": "demo-blob",
+            "created_at": "2026-08-31T18:26:19.425Z",
+            "version": "production",
+            "num_tables": 0,
+            "file_size": 8736768,
+            "jurisdiction": null
+          },
+          {
+            "uuid": "d1-wizardgang-demo-data",
+            "name": "wizardgang-demo-data",
+            "created_at": "2026-08-31T16:38:25.976Z",
+            "version": "production",
+            "num_tables": 0,
+            "file_size": 12288,
+            "jurisdiction": null
+          }
+        ],
+        "result_info": {
+          "count": 2,
+          "page": 1,
+          "per_page": 100,
+          "total_count": 2
+        }
+      }
+    },
+    "/r2/buckets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "buckets": [
+            {
+              "name": "wizardgang-demo-assets",
+              "creation_date": "2026-08-31T16:38:23.626Z"
+            },
+            {
+              "name": "wizardgang-demo-r2",
+              "creation_date": "2026-08-31T18:26:20.787Z"
+            },
+            {
+              "name": "wizardgang-demo-r2-preview",
+              "creation_date": "2026-08-31T18:26:22.188Z"
+            }
+          ]
+        }
+      }
+    },
+    "/r2/buckets/wizardgang-demo-assets/lifecycle": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "rules": [
+            {
+              "id": "Default Multipart Abort Rule",
+              "enabled": true,
+              "conditions": {},
+              "abortMultipartUploadsTransition": {
+                "condition": {
+                  "type": "Age",
+                  "maxAge": 604800
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "/r2/buckets/wizardgang-demo-r2/lifecycle": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "rules": [
+            {
+              "id": "Default Multipart Abort Rule",
+              "enabled": true,
+              "conditions": {},
+              "abortMultipartUploadsTransition": {
+                "condition": {
+                  "type": "Age",
+                  "maxAge": 604800
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "/r2/buckets/wizardgang-demo-r2-preview/lifecycle": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": {
+          "rules": [
+            {
+              "id": "Default Multipart Abort Rule",
+              "enabled": true,
+              "conditions": {},
+              "abortMultipartUploadsTransition": {
+                "condition": {
+                  "type": "Age",
+                  "maxAge": 604800
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "/storage/kv/namespaces": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "id": "kv-wg-gateway-status-dev",
+            "title": "wg-gateway-status-dev",
+            "supports_url_encoding": true
+          },
+          {
+            "id": "kv-wg-gateway-status-prod",
+            "title": "wg-gateway-status-prod",
+            "supports_url_encoding": true
+          }
+        ],
+        "result_info": {
+          "count": 2,
+          "page": 1,
+          "per_page": 20,
+          "total_count": 2,
+          "total_pages": 1
+        }
+      }
+    },
+    "/workers/durable_objects/namespaces": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "id": "do-wizardgangprod_Lobby",
+            "name": "wizardgangprod_Lobby",
+            "script": "wizardgangprod",
+            "class": "Lobby",
+            "use_sqlite": true
+          },
+          {
+            "id": "do-wizardgangprod_Room",
+            "name": "wizardgangprod_Room",
+            "script": "wizardgangprod",
+            "class": "Room",
+            "use_sqlite": true
+          },
+          {
+            "id": "do-wizardgang-architecture-demo_DemoCoordinator",
+            "name": "wizardgang-architecture-demo_DemoCoordinator",
+            "script": "wizardgang-architecture-demo",
+            "class": "DemoCoordinator",
+            "use_sqlite": true
+          }
+        ],
+        "result_info": {
+          "page": 1,
+          "per_page": 20,
+          "count": 3,
+          "total_count": 3
+        }
+      }
+    },
+    "/secrets_store/stores": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [
+          {
+            "id": "store-default_secrets_store",
+            "name": "default_secrets_store",
+            "created": "2026-04-10T02:37:47.726027Z",
+            "modified": "2026-04-10T02:37:47.726027Z"
+          }
+        ],
+        "result_info": {
+          "page": 1,
+          "per_page": 20,
+          "count": 1,
+          "total_count": 1
+        }
+      }
+    },
+    "/secrets_store/stores/store-default_secrets_store/secrets": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result": [],
+        "result_info": {
+          "page": 1,
+          "per_page": 20,
+          "count": 0,
+          "total_count": 0
+        }
+      }
+    }
+  }
+}

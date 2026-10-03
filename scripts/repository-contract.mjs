@@ -83,8 +83,17 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
-  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings']) {
+  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare']) {
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
+  }
+  if (pkg.scripts?.['verify:cloudflare'] !== 'node scripts/verify-cloudflare.mjs') {
+    failures.push('verify:cloudflare must run the read-only scripts/verify-cloudflare.mjs');
+  }
+  // The live Cloudflare read is an owner-run command; credential-free check and every workflow stay offline.
+  const cloudflareRead = /verify[:-]cloudflare|CLOUDFLARE_(?:API_TOKEN|ACCOUNT_ID)/;
+  if (cloudflareRead.test(pkg.scripts?.check ?? '')) failures.push('npm run check must not read Cloudflare');
+  for (const [name, workflow] of [['CI', ci], ['Release', release], ['Release cutter', cutter]]) {
+    if (cloudflareRead.test(workflow ?? '')) failures.push(`${name} workflow must not read Cloudflare`);
   }
 
   const ciEvents = keys(block(ci, 'on'), 2);
@@ -183,6 +192,8 @@ export function validateRepositoryAt(root) {
     'scripts/check-workflow-shell.mjs', 'tests/workflow-shell.test.mjs',
     '.github/workflows/release-cutter.yml', 'config/phase.json',
     'config/cloudflare.json', 'scripts/cloudflare-desired-state.mjs', 'tests/cloudflare-desired-state.test.mjs',
+    'scripts/verify-cloudflare.mjs', 'scripts/cloudflare-drift.mjs', 'scripts/cloudflare-live-state.mjs',
+    'tests/cloudflare-drift.test.mjs', 'tests/verify-cloudflare.test.mjs', 'tests/fixtures/cloudflare-2026-10-03.json',
   ];
   const failures = [];
   for (const path of required) {

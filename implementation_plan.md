@@ -57,22 +57,8 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 - The Cloudflare account ID comes from `CLOUDFLARE_ACCOUNT_ID` at runtime and is never committed.
 - Platform code is dependency-free ESM JavaScript with JSDoc types and a hand-written `.d.ts`. It runs on Node 26 for tests and on Workers in consumers, so `npm run check` stays credential-free with no new runtime dependencies.
 - Provider-reading commands stay outside `npm run check` and are tested against recorded fixtures.
+- `npm run verify:cloudflare` is the read-only live drift check against `config/cloudflare.json` (GET only, runtime `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). It exits 0 converged, 1 drift, 2 missing credentials, 3 denied read access and 4 other failures. Against the recorded 2026-10-03 account it reports 28 missing, 38 unexpected and 4 mismatched items; Phases 1, 3 and 4 close them. Later tasks and the runbook use it as their precondition and read-back, and extend its fixtures rather than adding a second reader.
 - `config/cloudflare.json` is the desired Cloudflare state, and `scripts/cloudflare-desired-state.mjs` is its closed validator, enforced by the repository contract. Later tasks read the Workers, hosts, storage names, secret names and settings from it rather than restating them. Its compatibility date is 2026-08-31, the newest live date on 2026-10-03, with `nodejs_compat` as the only flag. The demo declares 17 Worker secret names from `config/worker-secrets.json` on `3693e71`, without `DEMO_ADMIN_*`; the other three Workers declare none. The R2 bucket expires `demo/uploads/` after 1 day, matching the demo's 24-hour visitor uploads.
-
-### BASE-017 — [OPS] Add a read-only Cloudflare drift check
-
-- Dependency: BASE-016 merged.
-- Why: The desired state is only useful if live convergence can be proven the same way `verify:github-settings` proves GitHub convergence.
-- Scope: Add `npm run verify:cloudflare`. It issues GET calls only, using `CLOUDFLARE_API_TOKEN` (the read-only audit token) and `CLOUDFLARE_ACCOUNT_ID` from the environment.
-  - It compares by exact set equality: Worker scripts, custom domains (host → Worker), D1 databases, R2 buckets, KV namespaces, DO namespaces (Worker:class), crons per Worker, secret names per Worker and Secrets Store secret names.
-  - It also compares per-Worker settings: compatibility date and flags, observability, workers.dev and preview URLs. R2 lifecycle rules are compared too.
-  - Output lists missing, unexpected and mismatched items, then exits non-zero on drift. The token is never printed.
-  - Test it with recorded API fixtures, including the 2026-10-03 shape, which must report the expected drift.
-  - Add a control-map row.
-- Non-goals: No apply or mutate command, no secret values read, no use inside `npm run check` or CI, and no zone, DNS or ruleset reads (the current OAuth scope lacks them).
-- Acceptance: Fixture tests prove each category's missing, unexpected and mismatch paths, plus a clean pass. A missing token or account ID fails closed with a distinct message. Read-access failures are reported distinctly.
-- Validation: Pinned `npm ci`, focused drift tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI. One owner-run live invocation is optional and recorded in the PR, not in the repository.
-- Authorities: `config/cloudflare.json`, `scripts/verify-github-repository-settings.mjs` (the pattern), `docs/CONTROL-MAP.md` and AGENTS.md commands and credentials.
 
 ### BASE-018 — [FEAT] Add the wg-edge Worker shell
 

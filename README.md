@@ -12,7 +12,7 @@ The contract gate is `npm ci && npm run check && npm run audit:dependencies`. A 
 
 1. Git source, test assertions, workflow files, and committed configuration define executable contracts.
 2. `config/github-repository-settings.json` is the desired GitHub provider state; live readback is required to claim convergence.
-   `config/cloudflare.json` is the desired Cloudflare state for the four `wizardgang.ai` Workers. `scripts/cloudflare-desired-state.mjs` keeps it exact and closed during `npm run check`; it holds names only, never an account ID, binding ID or secret value, and claims intent, not live convergence.
+   `config/cloudflare.json` is the desired Cloudflare state for the four `wizardgang.ai` Workers. `scripts/cloudflare-desired-state.mjs` keeps it exact and closed during `npm run check`; it holds names only, never an account ID, binding ID or secret value, and claims intent, not live convergence. `npm run verify:cloudflare` is the separate read-only live comparison.
 3. Current-state policy documents describe responsibilities and intent.
 4. Git first-parent history, pull requests, workflow runs, annotated tags, Releases, and attestations are the historical evidence. The repository does not keep a parallel release ledger.
 
@@ -27,3 +27,5 @@ npm run audit:dependencies
 ```
 
 `npm run check` needs no GitHub credential. Live provider checks use `GH_ADMIN_TOKEN`, or `GH_TOKEN` when it has the required permissions. `npm run verify:github-settings` only reads repository metadata, immutable Releases, and rulesets; `npm run apply:github-settings` changes only the committed merge settings, immutable Releases, and rulesets, then independently re-reads them. Keep the token in process or provider secret state and never print it.
+
+`npm run verify:cloudflare` compares live Cloudflare with `config/cloudflare.json`. It needs runtime `CLOUDFLARE_API_TOKEN` (the read-only audit token) and `CLOUDFLARE_ACCOUNT_ID`, issues GET requests only, never reads secret values and never prints the token. It lists missing, unexpected and mismatched items and exits 0 when converged, 1 on drift, 2 when credentials are missing or malformed, 3 when read access is denied and 4 for an invalid authority or any other API failure. It is owner-run: neither `npm run check` nor any workflow calls it, and its tests use recorded API fixtures.
