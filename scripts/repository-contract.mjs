@@ -1,28 +1,9 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
 import { validateMigrationsAt } from './migration-contract.mjs';
-
-function block(source, key, indent = 0) {
-  const lines = source.split('\n');
-  const marker = `${' '.repeat(indent)}${key}:`;
-  const start = lines.findIndex((line) => line.trimEnd() === marker);
-  if (start < 0) return null;
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!line.trim() || line.trimStart().startsWith('#')) continue;
-    const spaces = line.match(/^ */)[0].length;
-    if (spaces <= indent) { end = index; break; }
-  }
-  return lines.slice(start + 1, end).join('\n');
-}
-
-function keys(source, indent) {
-  if (source === null) return [];
-  return [...source.matchAll(new RegExp(`^${' '.repeat(indent)}([A-Za-z0-9_-]+):(?:\\s|$)`, 'gm'))]
-    .map((match) => match[1]);
-}
+import { DEPLOY_WORKFLOW, validateDeployWorkflow } from './deploy-workflow-contract.mjs';
+import { block, keys } from './workflow-yaml.mjs';
 
 function requireMatch(failures, name, source, pattern) {
   if (!pattern.test(source ?? '')) failures.push(name);
@@ -70,7 +51,10 @@ export function validateRepositoryPaths(present, phase) {
   return failures;
 }
 
-export function validateRepositoryContract({ ci, release, cutter, pkg, lock, phase, provider }) {
+// Baseline's workflows: its own CI and release path, plus the reusable deploy that only consumers call.
+export const WORKFLOWS = Object.freeze(['ci.yml', 'deploy-worker.yml', 'release-cutter.yml', 'release.yml']);
+
+export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, lock, phase, provider }) {
   const failures = [];
   if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) failures.push('package.json owns a semantic version');
   if (pkg.private !== true) failures.push('source-only seed must be private to npm publication');
@@ -98,6 +82,16 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
   if (cloudflareRead.test(pkg.scripts?.check ?? '')) failures.push('npm run check must not read Cloudflare');
   for (const [name, workflow] of [['CI', ci], ['Release', release], ['Release cutter', cutter]]) {
     if (cloudflareRead.test(workflow ?? '')) failures.push(`${name} workflow must not read Cloudflare`);
+  }
+
+  // Baseline never deploys: only consumers call deploy-worker.yml, and nothing of baseline's own runs wrangler or binds an environment.
+  failures.push(...validateDeployWorkflow(deploy));
+  for (const [name, workflow] of [['CI', ci], ['Release', release], ['Release cutter', cutter]]) {
+    if (/deploy-worker|wrangler|^\s*environment:/m.test(workflow ?? '')) failures.push(`${name} workflow must never deploy`);
+  }
+  if (/wrangler|deploy-worker/.test(JSON.stringify(pkg.scripts ?? {}))) failures.push('package scripts must never deploy');
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    if (pkg[field]?.wrangler) failures.push('baseline must not depend on wrangler');
   }
 
   const ciEvents = keys(block(ci, 'on'), 2);
@@ -208,6 +202,8 @@ export function validateRepositoryAt(root) {
     ...['README.md', 'index.d.ts', 'cli.mjs', 'desired.mjs', 'jsonc.mjs', 'template.mjs', 'vendor.mjs', 'wrangler.mjs']
       .map((file) => `platform/conformance/${file}`),
     'tests/wrangler-conformance.test.mjs', 'tests/vendoring.test.mjs', 'tests/fixtures/wrangler-hexframe-f95b735.jsonc',
+    DEPLOY_WORKFLOW, 'scripts/deploy-workflow-contract.mjs', 'scripts/workflow-yaml.mjs', 'tests/deploy-workflow-contract.test.mjs',
+    'platform/deploy/README.md', 'platform/deploy/index.d.ts', 'platform/deploy/verify.mjs', 'tests/deploy-verify.test.mjs',
   ];
   const failures = [];
   for (const path of required) {
@@ -223,6 +219,11 @@ export function validateRepositoryAt(root) {
   failures.push(...validateRepositoryPaths(present, JSON.parse(read('config/phase.json'))));
   // Baseline is the vendoring source; only a consumer's vendored copy carries a lock.
   if (existsSync(join(root, 'platform/vendor.lock.json'))) failures.push('baseline platform/ is the vendoring source and must not carry vendor.lock.json');
+  const workflows = readdirSync(join(root, '.github/workflows')).sort();
+  if (workflows.join() !== WORKFLOWS.join()) failures.push(`workflows must be exactly ${WORKFLOWS.join(', ')}`);
+  for (const config of ['wrangler.json', 'wrangler.jsonc', 'wrangler.toml']) {
+    if (existsSync(join(root, config))) failures.push(`baseline never deploys and must not carry ${config}`);
+  }
   if (failures.length) return failures;
   failures.push(...validateCloudflareDesiredState(loadCloudflareDesiredState(root))
     .map((failure) => `config/cloudflare.json: ${failure}`));
@@ -231,6 +232,7 @@ export function validateRepositoryAt(root) {
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),
     cutter: read('.github/workflows/release-cutter.yml'),
+    deploy: read(DEPLOY_WORKFLOW),
     pkg: JSON.parse(read('package.json')),
     lock: JSON.parse(read('package-lock.json')),
     phase: JSON.parse(read('config/phase.json')),

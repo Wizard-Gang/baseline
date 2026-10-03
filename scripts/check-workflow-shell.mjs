@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,13 +32,16 @@ export function checkLiteralBashRuns(workflow) {
   });
 }
 
+export const workflowPaths = (base = root) => readdirSync(resolve(base, '.github/workflows'))
+  .filter((name) => /\.ya?ml$/.test(name)).sort().map((name) => `.github/workflows/${name}`);
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const paths = ['.github/workflows/release.yml', '.github/workflows/release-cutter.yml'];
+  const paths = workflowPaths();
   const failures = paths.flatMap((path) => checkLiteralBashRuns(readFileSync(resolve(root, path), 'utf8')).map((error) => `${path}: ${error}`));
   if (failures.length) {
     for (const failure of failures) console.error(failure);
     process.exitCode = 1;
   } else {
-    console.log('Release workflow literal Bash blocks passed syntax checks.');
+    console.log(`Literal Bash blocks passed syntax checks in ${paths.length} workflows.`);
   }
 }

@@ -14,6 +14,7 @@ const specimen = () => ({
   ci: read('.github/workflows/ci.yml'),
   release: read('.github/workflows/release.yml'),
   cutter: read('.github/workflows/release-cutter.yml'),
+  deploy: read('.github/workflows/deploy-worker.yml'),
   pkg: JSON.parse(read('package.json')),
   lock: JSON.parse(read('package-lock.json')),
   phase: JSON.parse(read('config/phase.json')),

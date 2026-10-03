@@ -33,13 +33,13 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 
 **Per-repo migrations (Phase 4).** These are not baseline tasks. Each repo queues its own after the baseline task it depends on has merged.
 
-- **Hexframe** adopts the vendored `wg-edge` shell. It collapses `env.production` into a conforming top-level `wrangler.jsonc` and moves to the BASE-021 deploy workflow. Its `ADMIN_*` secrets are deleted in Phase 1. The Worker name `hexframe` already matches its target.
+- **Hexframe** adopts the vendored `wg-edge` shell. It collapses `env.production` into a conforming top-level `wrangler.jsonc` and calls the reusable `deploy-worker.yml`. Its `ADMIN_*` secrets are deleted in Phase 1. The Worker name `hexframe` already matches its target.
 - **WizardGang** becomes the `wizardgang` Worker with `www` as an alias. It moves to the shared compatibility date and `nodejs_compat`, dropping `assets_navigation_has_no_effect`. It adopts the shell and the deploy workflow, and removes YarReader (19 tracked files on `ad3f0db`). It deletes its Cloudflare token scripts once BASE-022 owns them.
   - The SharkTank proxy removal that was blocked on ST-145 is already done (WG-116). Nothing remains for it.
 - **The demo** becomes the `demo` Worker on the shared D1 and R2. That means migrating the useful `demo-blob` rows into `records`/`events` with TTLs and moving the `wizardgang-demo-r2` objects under `demo/`.
   - It moves `CLOUDFLARE_API_TOKEN` from repo level to a `production` environment.
   - It replaces `DEMO_ADMIN_*` with the shell's operator gate and removes them from its `config/worker-secrets.json`, so its secrets match the 17 names declared in `config/cloudflare.json`.
-  - DEMO-431 (release and deployment tools) and DEMO-443 (Deploy workflow logic) overlap with BASE-021. Recommended default: the demo re-scopes both to call the reusable workflow instead of porting its own deploy tooling.
+  - DEMO-431 (release and deployment tools) and DEMO-443 (Deploy workflow logic) overlap with `deploy-worker.yml`. Recommended default: the demo re-scopes both to call the reusable workflow instead of porting its own deploy tooling. Its release identity, conformance, 100% traffic and `/version.json` checks move there; its identity-continuity, asset and secret-name checks stay demo-specific until its Phase 4 migration.
 - **SharkTank** becomes the `sharktank` Worker at a release boundary. The owner's direction is a rehearsed Durable Object `transferred_classes` migration from `wizardgangprod`. After ST-144 and ST-149, no durable DO state is planned to remain, so the rehearsal must confirm what (if anything) the transfer still carries. The open decision below covers this.
 - **YarReader** gets a tombstone (private and archived, like the other retired repos). It has no Cloudflare footprint.
 
@@ -63,27 +63,15 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 - `config/cloudflare.json` is the desired Cloudflare state, and `scripts/cloudflare-desired-state.mjs` is its closed validator, enforced by the repository contract. Later tasks read the Workers, hosts, storage names, secret names and settings from it rather than restating them. Its compatibility date is 2026-08-31, the newest live date on 2026-10-03, with `nodejs_compat` as the only flag. The demo declares 17 Worker secret names from `config/worker-secrets.json` on `3693e71`, without `DEMO_ADMIN_*`; the other three Workers declare none. The R2 bucket expires `demo/uploads/` after 1 day, matching the demo's 24-hour visitor uploads.
 - `platform/conformance/` is the vendored checker, and `platform/wrangler.template.jsonc` is the conforming config. Its `desired.mjs` mirrors `config/cloudflare.json`, including Worker secret names, and a test fails if they differ.
   - `node platform/conformance/cli.mjs wrangler --worker <label> [wrangler.jsonc]` requires a single top-level Worker: no `env`, `account_id` or `route`, plus an allowlist of keys. It checks `name` and `WG_APP` against the label and requires the declared host exactly once as a custom domain, with `www` only on `wizardgang`. It requires the shared compatibility date and flags, `workers_dev` and `preview_urls` false and observability on.
-  - Bindings: at most one D1 `WG_DB` → `wizardgang`, resolved by name (wrangler 4.147 needs no `database_id`), and at most one R2 `WG_R2` → `wizardgang`. No KV. Durable Object bindings and net `migrations` must be exactly the declared classes, and crons exactly the declared ones. Secrets Store bindings are allowed only for `WG_OPS_TOKEN` and `WG_SESSION_KEY`, each with a 32-hex `store_id` supplied by the consumer. `assets` may bind only `ASSETS`.
+  - Bindings: at most one D1 `WG_DB` → `wizardgang`, by name or UUID `database_id` (wrangler 4.147 resolves a name, but only through the provisioning that `deploy-worker.yml` turns off, so a deploying consumer commits the UUID), and at most one R2 `WG_R2` → `wizardgang`. No KV. Durable Object bindings and net `migrations` must be exactly the declared classes, and crons exactly the declared ones. Secrets Store bindings are allowed only for `WG_OPS_TOKEN` and `WG_SESSION_KEY`, each with a 32-hex `store_id` supplied by the consumer. `assets` may bind only `ASSETS`.
   - `render --worker <label> --store-id <id>` prints a starting config. Exit codes are 0 for conformant, 1 for nonconformant and 2 for a usage error.
-  - A consumer vendors `platform/` verbatim from a merged commit and commits `npm run vendor:lock -- <commit>` as `platform/vendor.lock.json`, which holds the source commit and a SHA-256 per file. `node platform/conformance/cli.mjs pin` fails on an edited, missing, unpinned or non-regular file. Baseline's own `platform/` carries no lock. BASE-021 runs `pin` and `wrangler` before deploying.
-
-### BASE-021 — [OPS] Add the reusable deploy-worker workflow
-
-- Dependency: BASE-020 merged.
-- Why: Each repo deploys differently, with different token placement. One reusable workflow gives every Worker the same tag-to-production path and the same identity proof.
-- Scope: Add `.github/workflows/deploy-worker.yml`, triggered only by `workflow_call`, with these steps:
-  1. Check out the caller's annotated semantic tag. Require the tag to match `package.json` and point to the expected commit.
-  2. Run `npm ci` and `npm run check`, then the vendored conformance and pin checks.
-  3. Build, then run `wrangler deploy` (wrangler pinned by the caller's lockfile) in a job bound to the caller's `production` environment, so only environment-scoped `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are used.
-  4. Confirm that the new version serves 100% of traffic.
-  5. Poll the public `https://<host>/version.json` until its `version` and `commit` match the tag, and fail on timeout.
-  - Actions are pinned by SHA with least-privilege permissions. Literal run blocks pass `check-workflow-shell`.
-  - Extend the repository contract so the workflow has no trigger that runs in baseline itself, and baseline never deploys.
-  - Document the call snippet for consumers.
-- Non-goals: No consumer adoption, no secrets, environments or settings changes, and no first deploy. Rollback stays a later decision, recorded in the runbook as redeploying the previous tag.
-- Acceptance: Contract tests prove the call-only trigger, the environment binding, the pinned actions, the 100% check and the `/version.json` identity check. No baseline workflow can deploy.
-- Validation: Pinned `npm ci`, focused workflow-contract and workflow-shell tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: `.github/workflows/`, `scripts/repository-contract.mjs`, `scripts/check-workflow-shell.mjs`, `docs/RELEASE-MANAGEMENT.md` and the demo's DEMO-431 and DEMO-443 scope (for the overlap note).
+  - A consumer vendors `platform/` verbatim from a merged commit and commits `npm run vendor:lock -- <commit>` as `platform/vendor.lock.json`, which holds the source commit and a SHA-256 per file. `node platform/conformance/cli.mjs pin` fails on an edited, missing, unpinned or non-regular file. Baseline's own `platform/` carries no lock.
+- `.github/workflows/deploy-worker.yml` is the only deploy path, documented in `platform/deploy/README.md`. Its sole trigger is `workflow_call` with the required inputs `worker`, `tag` and `expected_sha`, and it declares no secrets. Callers pin it to a merged baseline commit and never pass `secrets: inherit`.
+  - A secret-free `verify` job binds the annotated `vX.Y.Z` tag to `package.json` and the commit on the caller's `main`. It then runs `npm ci`, `npm run check`, `pin` and `wrangler --worker <label>`.
+  - A `deploy` job bound to the caller's `production` environment reads only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. It builds with `WG_VERSION` and `WG_COMMIT` and runs `npx --no-install wrangler deploy --experimental-provision=false --experimental-auto-create=false`. In wrangler 4.147, provisioning creates a D1 database named in the config even with auto-create off. With provisioning off, an unresolved binding fails instead, so a deploy never creates D1 `wizardgang`.
+  - It then proves that the deployed version serves 100% of traffic (`wrangler deployments status`) and polls `https://<host>/version.json` for the label, version and commit, failing after 5 minutes. A Cloudflare managed challenge to the runner, which Hexframe has seen, counts as a failed attempt.
+  - `platform/deploy/verify.mjs` holds the `host`, `traffic` and `version` checks, and consumers vendor it. The repository contract keeps baseline from deploying: its workflows are exactly CI, Release, Release Cutter and `deploy-worker.yml`, none of the others calls it, runs wrangler or binds an environment, and baseline has no wrangler dependency, config or script.
+  - Rollback is a redeploy of the previous release tag through the same workflow.
 
 ### BASE-022 — [SEC] Move Cloudflare token rotation and discovery into baseline
 
@@ -112,11 +100,12 @@ This queue builds the platform half of the Cloudflare consolidation for the four
     - the KV namespaces `wg-gateway-status-dev` and `wg-gateway-status-prod`;
     - Hexframe's `ADMIN_*` Worker secrets, after proving its `origin/main` no longer reads them.
   - Phase 3 provisioning:
-    - create D1 `wizardgang` and apply `0001_universal.sql`;
+    - create D1 `wizardgang`, record its UUID `database_id` for the consumers' `wrangler.jsonc`, and apply `0001_universal.sql`;
     - create R2 `wizardgang` with its lifecycle rules;
     - add `WG_OPS_TOKEN` and `WG_SESSION_KEY` to the Secrets Store;
     - mint the scoped deploy token, with its minimum permissions listed, and set it into each production environment with `rotate:cloudflare-token`;
     - mint the read-only audit token for `verify:cloudflare`.
+  - Deploy rollback: redeploy the previous release tag through `deploy-worker.yml`, then confirm `/version.json`.
   - Later retirements, each gated: `wizardgang-demo-assets` after SharkTank ST-148 is deployed; `demo-blob` and `wizardgang-demo-r2` after the demo's data migration; old Worker names after each rename is verified; the `www` zone rule after the alias serves; the demo's old runtime token.
 - Non-goals: No mutation by an agent, no token values and no account ID in the document.
 - Acceptance: Every Phase 1 and Phase 3 step has a precondition, a command, a read-back and a rollback. The document names nothing outside `config/cloudflare.json` and the 2026-10-03 inventory. Documentation tests keep its links and command names current.
