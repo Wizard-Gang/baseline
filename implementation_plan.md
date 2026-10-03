@@ -34,10 +34,10 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 **Per-repo migrations (Phase 4).** These are not baseline tasks. Each repo queues its own after the baseline task it depends on has merged.
 
 - **Hexframe** adopts the vendored `wg-edge` shell. It collapses `env.production` into a conforming top-level `wrangler.jsonc` and calls the reusable `deploy-worker.yml`. Its `ADMIN_*` secrets are deleted in Phase 1. The Worker name `hexframe` already matches its target.
-- **WizardGang** becomes the `wizardgang` Worker with `www` as an alias. It moves to the shared compatibility date and `nodejs_compat`, dropping `assets_navigation_has_no_effect`. It adopts the shell and the deploy workflow, and removes YarReader (19 tracked files on `ad3f0db`). It deletes its Cloudflare token scripts once BASE-022 owns them.
+- **WizardGang** becomes the `wizardgang` Worker with `www` as an alias. It moves to the shared compatibility date and `nodejs_compat`, dropping `assets_navigation_has_no_effect`. It adopts the shell and the deploy workflow, and removes YarReader (19 tracked files on `ad3f0db`). It deletes `scripts/discover-cloudflare-api-token-targets.sh` and `scripts/rotate-cloudflare-api-token.sh`, which baseline now owns.
   - The SharkTank proxy removal that was blocked on ST-145 is already done (WG-116). Nothing remains for it.
 - **The demo** becomes the `demo` Worker on the shared D1 and R2. That means migrating the useful `demo-blob` rows into `records`/`events` with TTLs and moving the `wizardgang-demo-r2` objects under `demo/`.
-  - It moves `CLOUDFLARE_API_TOKEN` from repo level to a `production` environment.
+  - It moves `CLOUDFLARE_API_TOKEN` from repo level to a `production` environment. Its `production` environment exists with no secrets, so `rotate:cloudflare-token` already writes it there; the repo-level copy stays drift until the owner deletes it.
   - It replaces `DEMO_ADMIN_*` with the shell's operator gate and removes them from its `config/worker-secrets.json`, so its secrets match the 17 names declared in `config/cloudflare.json`.
   - DEMO-431 (release and deployment tools) and DEMO-443 (Deploy workflow logic) overlap with `deploy-worker.yml`. Recommended default: the demo re-scopes both to call the reusable workflow instead of porting its own deploy tooling. Its release identity, conformance, 100% traffic and `/version.json` checks move there; its identity-continuity, asset and secret-name checks stay demo-specific until its Phase 4 migration.
 - **SharkTank** becomes the `sharktank` Worker at a release boundary. The owner's direction is a rehearsed Durable Object `transferred_classes` migration from `wizardgangprod`. After ST-144 and ST-149, no durable DO state is planned to remain, so the rehearsal must confirm what (if anything) the transfer still carries. The open decision below covers this.
@@ -72,21 +72,10 @@ This queue builds the platform half of the Cloudflare consolidation for the four
   - It then proves that the deployed version serves 100% of traffic (`wrangler deployments status`) and polls `https://<host>/version.json` for the label, version and commit, failing after 5 minutes. A Cloudflare managed challenge to the runner, which Hexframe has seen, counts as a failed attempt.
   - `platform/deploy/verify.mjs` holds the `host`, `traffic` and `version` checks, and consumers vendor it. The repository contract keeps baseline from deploying: its workflows are exactly CI, Release, Release Cutter and `deploy-worker.yml`, none of the others calls it, runs wrangler or binds an environment, and baseline has no wrangler dependency, config or script.
   - Rollback is a redeploy of the previous release tag through the same workflow.
-
-### BASE-022 — [SEC] Move Cloudflare token rotation and discovery into baseline
-
-- Dependency: BASE-016 merged.
-- Why: The token rotation and discovery scripts live in a product repo (WizardGang). They update repo-level secrets as well, which keeps the demo's repo-level token alive.
-- Scope: Bring `scripts/discover-cloudflare-api-token-targets.sh` and `scripts/rotate-cloudflare-api-token.sh` from WizardGang `ad3f0db` into baseline.
-  - Default: port them to Node ESM, so `npm run check` can test them with a stubbed `gh`.
-  - Derive targets from the repositories and `production` environments declared in `config/cloudflare.json`.
-  - Write only production-environment secrets. Report any repo-level `CLOUDFLARE_API_TOKEN` as drift and never update it.
-  - Read the new value from stdin only, pass it to `gh secret set` over stdin, and never print it. Re-read `updatedAt` after each write.
-  - Add `discover:cloudflare-token-targets` and `rotate:cloudflare-token` npm scripts.
-- Non-goals: No rotation run, no secret, environment or token mutation, and no deletion of the WizardGang copies (WizardGang's own Phase 4 task does that).
-- Acceptance: Stubbed-`gh` tests prove that targets come only from the config. They also prove repo-level secrets are reported and never written, values never appear in argv or output, and a failed write or re-read fails the run.
-- Validation: Pinned `npm ci`, focused rotation and discovery tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: WizardGang `scripts/*cloudflare-api-token*.sh` at `ad3f0db`, `config/cloudflare.json`, AGENTS.md commands and credentials, and `SECURITY.md`.
+- `npm run discover:cloudflare-token-targets` and `npm run rotate:cloudflare-token` own the deploy token. Their only targets are the `production` environment `CLOUDFLARE_API_TOKEN` secrets of the repositories in `config/cloudflare.json`, read and written through an authenticated `gh`.
+  - Both report drift: a missing production environment or secret, and any repo-level or other-environment copy, which is never written. On 2026-10-03 the only drift is the demo's repo-level token and its empty `production` environment. Discovery exits 0 ready, 1 drift, 2 usage or missing `gh` credentials, 3 denied reads and 4 an invalid authority.
+  - Rotation is plan-only unless given `--apply`. It refuses if any production environment is missing, reads the value from piped stdin only, requires Cloudflare to report it active (the account endpoint when `CLOUDFLARE_ACCOUNT_ID` is set; `--skip-verify` skips this), writes with `gh secret set --env production` over stdin and re-reads `updatedAt`. A failed write, a failed re-read or an unchanged `updatedAt` exits 1. The value never appears in an argument, the environment or the output.
+  - The repository contract keeps both out of `npm run check`, every other package script and every workflow; `npm run check` tests them against a stub `gh`.
 
 ### BASE-023 — [DOCS] Write the Cloudflare provider runbook
 
@@ -103,10 +92,10 @@ This queue builds the platform half of the Cloudflare consolidation for the four
     - create D1 `wizardgang`, record its UUID `database_id` for the consumers' `wrangler.jsonc`, and apply `0001_universal.sql`;
     - create R2 `wizardgang` with its lifecycle rules;
     - add `WG_OPS_TOKEN` and `WG_SESSION_KEY` to the Secrets Store;
-    - mint the scoped deploy token, with its minimum permissions listed, and set it into each production environment with `rotate:cloudflare-token`;
+    - mint the scoped deploy token, with its minimum permissions listed, check targets with `discover:cloudflare-token-targets`, and pipe it into `rotate:cloudflare-token -- --apply` (read-back: its per-target `updatedAt` and a clean discovery apart from the demo's repo-level copy);
     - mint the read-only audit token for `verify:cloudflare`.
   - Deploy rollback: redeploy the previous release tag through `deploy-worker.yml`, then confirm `/version.json`.
-  - Later retirements, each gated: `wizardgang-demo-assets` after SharkTank ST-148 is deployed; `demo-blob` and `wizardgang-demo-r2` after the demo's data migration; old Worker names after each rename is verified; the `www` zone rule after the alias serves; the demo's old runtime token.
+  - Later retirements, each gated: `wizardgang-demo-assets` after SharkTank ST-148 is deployed; `demo-blob` and `wizardgang-demo-r2` after the demo's data migration; old Worker names after each rename is verified; the `www` zone rule after the alias serves; the demo's old runtime token; the demo's repo-level GitHub `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` after its `production` environment holds both and its deploy reads them there.
 - Non-goals: No mutation by an agent, no token values and no account ID in the document.
 - Acceptance: Every Phase 1 and Phase 3 step has a precondition, a command, a read-back and a rollback. The document names nothing outside `config/cloudflare.json` and the 2026-10-03 inventory. Documentation tests keep its links and command names current.
 - Validation: Pinned `npm ci`, documentation tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.

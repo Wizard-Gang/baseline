@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  FORBIDDEN_APPLICATION_PATHS, PLATFORM_GRANT, validateRepositoryAt, validateRepositoryContract, validateRepositoryPaths,
+  FORBIDDEN_APPLICATION_PATHS, PLATFORM_GRANT, TOKEN_SCRIPTS, validateRepositoryAt, validateRepositoryContract, validateRepositoryPaths,
 } from '../scripts/repository-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -96,6 +96,31 @@ test('the Cloudflare drift check exists but never runs inside check or a workflo
     input = specimen();
     input[key] += '\n        env:\n          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n';
     assert.ok(contains(input, `${name} workflow must not read Cloudflare`));
+  }
+});
+
+test('the Cloudflare token commands exist but never run inside check, another script or a workflow', () => {
+  const contains = (input, text) => validateRepositoryContract(input).some((failure) => failure.includes(text));
+  let input = specimen();
+  assert.deepEqual(Object.keys(TOKEN_SCRIPTS).map((name) => input.pkg.scripts[name]),
+    ['node scripts/discover-cloudflare-token-targets.mjs', 'node scripts/rotate-cloudflare-token.mjs']);
+  delete input.pkg.scripts['rotate:cloudflare-token'];
+  assert.ok(contains(input, 'missing package script rotate:cloudflare-token'));
+  input = specimen();
+  input.pkg.scripts['discover:cloudflare-token-targets'] = 'node scripts/rotate-cloudflare-token.mjs';
+  assert.ok(contains(input, 'discover:cloudflare-token-targets must run scripts/discover-cloudflare-token-targets.mjs'));
+  for (const script of ['npm run rotate:cloudflare-token', 'node scripts/discover-cloudflare-token-targets.mjs', 'gh secret set X']) {
+    input = specimen();
+    input.pkg.scripts.check += ` && ${script}`;
+    assert.ok(contains(input, 'package script check must not run Cloudflare token tooling'), script);
+  }
+  for (const [key, name] of [['ci', 'CI'], ['release', 'Release'], ['cutter', 'Release cutter'], ['deploy', 'Deploy']]) {
+    for (const step of ['run: npm run rotate:cloudflare-token -- --apply', 'run: npm run discover:cloudflare-token-targets',
+      'run: gh secret set CLOUDFLARE_API_TOKEN --env production']) {
+      input = specimen();
+      input[key] += `\n      - ${step}\n`;
+      assert.ok(contains(input, `${name} workflow must not run Cloudflare token tooling`), `${name}: ${step}`);
+    }
   }
 });
 
