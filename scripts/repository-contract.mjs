@@ -84,8 +84,11 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
-  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare']) {
+  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare', 'vendor:lock']) {
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
+  }
+  if (pkg.scripts?.['vendor:lock'] !== 'node scripts/vendor-lock.mjs') {
+    failures.push('vendor:lock must print the platform/ lock with scripts/vendor-lock.mjs');
   }
   if (pkg.scripts?.['verify:cloudflare'] !== 'node scripts/verify-cloudflare.mjs') {
     failures.push('verify:cloudflare must run the read-only scripts/verify-cloudflare.mjs');
@@ -201,6 +204,10 @@ export function validateRepositoryAt(root) {
     'tests/wg-edge-shape.test.mjs', 'tests/fixtures/wg-edge-fakes.mjs',
     'platform/migrations/0001_universal.sql', 'platform/migrations/pins.json', 'scripts/migration-contract.mjs',
     'tests/migrations.test.mjs', 'tests/migration-contract.test.mjs',
+    'platform/wrangler.template.jsonc', 'scripts/vendor-lock.mjs',
+    ...['README.md', 'index.d.ts', 'cli.mjs', 'desired.mjs', 'jsonc.mjs', 'template.mjs', 'vendor.mjs', 'wrangler.mjs']
+      .map((file) => `platform/conformance/${file}`),
+    'tests/wrangler-conformance.test.mjs', 'tests/vendoring.test.mjs', 'tests/fixtures/wrangler-hexframe-f95b735.jsonc',
   ];
   const failures = [];
   for (const path of required) {
@@ -214,6 +221,8 @@ export function validateRepositoryAt(root) {
     .filter((path) => existsSync(join(root, path)))
     .map((path) => [path, statSync(join(root, path)).isDirectory()]));
   failures.push(...validateRepositoryPaths(present, JSON.parse(read('config/phase.json'))));
+  // Baseline is the vendoring source; only a consumer's vendored copy carries a lock.
+  if (existsSync(join(root, 'platform/vendor.lock.json'))) failures.push('baseline platform/ is the vendoring source and must not carry vendor.lock.json');
   if (failures.length) return failures;
   failures.push(...validateCloudflareDesiredState(loadCloudflareDesiredState(root))
     .map((failure) => `config/cloudflare.json: ${failure}`));

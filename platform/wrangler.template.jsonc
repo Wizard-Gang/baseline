@@ -1,0 +1,29 @@
+{
+  // The conforming shape for a wizardgang.ai Worker. Copy it to the repository root as wrangler.jsonc and replace
+  // __WG_APP__ with the Worker label from baseline config/cloudflare.json, __WG_HOST__ with its declared host and
+  // __SECRETS_STORE_ID__ with the default_secrets_store ID. Check it with:
+  //   node platform/conformance/cli.mjs wrangler --worker <label> wrangler.jsonc
+  //
+  // Top level only: no env blocks, and no account_id (deploys read CLOUDFLARE_ACCOUNT_ID).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "__WG_APP__",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Exactly one custom domain: the declared host. Only wizardgang adds www.wizardgang.ai, which the shell 308s to the apex.
+  "routes": [{ "pattern": "__WG_HOST__", "custom_domain": true }],
+  "observability": { "enabled": true },
+  "vars": { "WG_APP": "__WG_APP__" },
+  // Shared storage, resolved by name. Optional: bind them only when the Worker uses records, events or objects.
+  "d1_databases": [{ "binding": "WG_DB", "database_name": "wizardgang" }],
+  "r2_buckets": [{ "binding": "WG_R2", "bucket_name": "wizardgang" }],
+  // The shared operator token and session key. No other Secrets Store binding is allowed.
+  "secrets_store_secrets": [
+    { "binding": "WG_OPS_TOKEN", "store_id": "__SECRETS_STORE_ID__", "secret_name": "WG_OPS_TOKEN" },
+    { "binding": "WG_SESSION_KEY", "store_id": "__SECRETS_STORE_ID__", "secret_name": "WG_SESSION_KEY" }
+  ]
+  // A Worker that declares Durable Objects adds durable_objects.bindings and migrations whose net classes are
+  // exactly its declared classes. A Worker that declares crons adds triggers.crons with exactly those schedules.
+}
