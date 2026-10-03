@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 function block(source, key, indent = 0) {
@@ -30,6 +30,44 @@ function sameSet(actual, expected) {
   return actual.length === expected.length && expected.every((entry) => actual.includes(entry));
 }
 
+// Top-level paths that would make baseline a product repository. The platform grant never unlocks them.
+export const FORBIDDEN_APPLICATION_PATHS = Object.freeze(['src', 'app', 'apps', 'game', 'pages', 'public', 'workers', 'functions']);
+export const PLATFORM_GRANT = Object.freeze({ path: 'platform/', purpose: 'shared edge code only' });
+
+export function hasPlatformGrant(phase) {
+  const grant = phase?.platform;
+  return grant !== null && typeof grant === 'object' && !Array.isArray(grant)
+    && sameSet(Object.keys(grant), Object.keys(PLATFORM_GRANT))
+    && grant.path === PLATFORM_GRANT.path && grant.purpose === PLATFORM_GRANT.purpose;
+}
+
+export function validatePhase(phase) {
+  const failures = [];
+  if (phase?.phase !== 'contract' || phase?.applicationDevelopment !== false) {
+    failures.push('application development must remain disabled during contract proof');
+  }
+  if (!sameSet(Object.keys(phase ?? {}), ['phase', 'applicationDevelopment', 'platform'])) {
+    failures.push('phase must declare exactly phase, applicationDevelopment and the platform grant');
+  }
+  if (!hasPlatformGrant(phase)) {
+    failures.push('phase platform grant must be exactly platform/ for shared edge code only');
+  }
+  return failures;
+}
+
+// `present` maps each existing top-level path to whether it is a directory.
+export function validateRepositoryPaths(present, phase) {
+  const failures = [];
+  for (const path of FORBIDDEN_APPLICATION_PATHS) {
+    if (present.has(path)) failures.push(`application path exists before contract proof: ${path}`);
+  }
+  if (present.has('platform')) {
+    if (!hasPlatformGrant(phase)) failures.push('platform/ exists without the config/phase.json platform grant');
+    else if (present.get('platform') !== true) failures.push('platform/ must be a directory');
+  }
+  return failures;
+}
+
 export function validateRepositoryContract({ ci, release, cutter, pkg, lock, phase, provider }) {
   const failures = [];
   if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) failures.push('package.json owns a semantic version');
@@ -40,9 +78,7 @@ export function validateRepositoryContract({ ci, release, cutter, pkg, lock, pha
   if (lock?.version !== pkg.version || lock?.packages?.['']?.version !== pkg.version) {
     failures.push('package-lock version must match package.json');
   }
-  if (phase?.phase !== 'contract' || phase?.applicationDevelopment !== false) {
-    failures.push('application development must remain disabled during contract proof');
-  }
+  failures.push(...validatePhase(phase));
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
@@ -144,7 +180,7 @@ export function validateRepositoryAt(root) {
     'tests/change-contract.test.mjs', 'tests/github-settings.test.mjs',
     'tests/release-contract.test.mjs', 'tests/repository-contract.test.mjs',
     'scripts/check-workflow-shell.mjs', 'tests/workflow-shell.test.mjs',
-    '.github/workflows/release-cutter.yml',
+    '.github/workflows/release-cutter.yml', 'config/phase.json',
   ];
   const failures = [];
   for (const path of required) {
@@ -152,11 +188,13 @@ export function validateRepositoryAt(root) {
       failures.push(`missing or empty repository authority: ${path}`);
     }
   }
-  for (const path of ['src', 'app', 'apps', 'game', 'pages', 'public', 'workers', 'functions']) {
-    if (existsSync(join(root, path))) failures.push(`application path exists before contract proof: ${path}`);
-  }
   if (failures.length) return failures;
   const read = (path) => readFileSync(join(root, path), 'utf8');
+  const present = new Map([...FORBIDDEN_APPLICATION_PATHS, 'platform']
+    .filter((path) => existsSync(join(root, path)))
+    .map((path) => [path, statSync(join(root, path)).isDirectory()]));
+  failures.push(...validateRepositoryPaths(present, JSON.parse(read('config/phase.json'))));
+  if (failures.length) return failures;
   return validateRepositoryContract({
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),

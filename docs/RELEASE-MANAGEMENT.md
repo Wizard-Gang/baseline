@@ -1,6 +1,6 @@
 # Release management
 
-`package.json` owns the version. A version change is a controlled PR; an annotated `vMAJOR.MINOR.PATCH` tag identifies the accepted `main` commit for that version. Published tags never move or disappear. A release correction uses a new controlled change and version. This seed has no deployment target; releasing publishes the reference contract and its provenance, not an application.
+`package.json` owns the version. A version change is a controlled PR; an annotated `vMAJOR.MINOR.PATCH` tag identifies the accepted `main` commit for that version. Published tags never move or disappear. A release correction uses a new controlled change and version. This seed has no deployment target; releasing publishes the reference contract and its provenance, not an application. Shared edge code under the `platform/` grant is released only as part of that source; consuming repositories vendor and deploy it through their own controlled release paths, and baseline never deploys a Worker itself.
 
 ## Tag gate
 

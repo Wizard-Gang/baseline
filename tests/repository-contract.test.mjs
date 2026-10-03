@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { validateRepositoryAt, validateRepositoryContract } from '../scripts/repository-contract.mjs';
+import {
+  FORBIDDEN_APPLICATION_PATHS, PLATFORM_GRANT, validateRepositoryAt, validateRepositoryContract, validateRepositoryPaths,
+} from '../scripts/repository-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -75,4 +78,62 @@ test('workflows cannot call missing scripts, and phase cannot enable application
   assert.ok(failures.some((failure) => failure.includes('high-severity')));
   assert.ok(failures.some((failure) => failure.includes('nonexistent:gate')));
   assert.ok(failures.some((failure) => failure.includes('application development')));
+});
+
+test('the committed phase grants exactly platform/ for shared edge code', () => {
+  const { phase } = specimen();
+  assert.equal(phase.applicationDevelopment, false);
+  assert.deepEqual(phase.platform, { ...PLATFORM_GRANT });
+});
+
+test('a phase without the exact platform grant fails the contract', () => {
+  const variants = [
+    (phase) => { delete phase.platform; },
+    (phase) => { phase.platform.path = 'src/'; },
+    (phase) => { phase.platform.purpose = 'product code'; },
+    (phase) => { phase.platform.deploy = true; },
+    (phase) => { phase.workers = { path: 'workers/' }; },
+  ];
+  for (const change of variants) {
+    const input = specimen();
+    change(input.phase);
+    assert.ok(validateRepositoryContract(input).some((failure) => failure.includes('phase')), change.toString());
+  }
+});
+
+test('platform/ is accepted only under the grant and never unlocks application paths', () => {
+  const { phase } = specimen();
+  const withoutGrant = { ...phase };
+  delete withoutGrant.platform;
+  assert.deepEqual(validateRepositoryPaths(new Map(), phase), []);
+  assert.deepEqual(validateRepositoryPaths(new Map([['platform', true]]), phase), []);
+  assert.deepEqual(validateRepositoryPaths(new Map(), withoutGrant), []);
+  assert.ok(validateRepositoryPaths(new Map([['platform', true]]), withoutGrant)
+    .some((failure) => failure.includes('without the config/phase.json platform grant')));
+  assert.ok(validateRepositoryPaths(new Map([['platform', false]]), phase)
+    .some((failure) => failure.includes('must be a directory')));
+  for (const path of FORBIDDEN_APPLICATION_PATHS) {
+    assert.deepEqual(validateRepositoryPaths(new Map([['platform', true], [path, true]]), phase),
+      [`application path exists before contract proof: ${path}`]);
+  }
+});
+
+test('a repository copy passes with an empty platform/ and fails without the grant or with a forbidden path', (t) => {
+  const copy = mkdtempSync(join(tmpdir(), 'baseline-contract-'));
+  t.after(() => rmSync(copy, { recursive: true, force: true }));
+  cpSync(root, copy, {
+    recursive: true,
+    filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)),
+  });
+  mkdirSync(join(copy, 'platform'));
+  assert.deepEqual(validateRepositoryAt(copy), []);
+
+  mkdirSync(join(copy, 'workers'));
+  assert.ok(validateRepositoryAt(copy).includes('application path exists before contract proof: workers'));
+  rmSync(join(copy, 'workers'), { recursive: true });
+
+  const phase = JSON.parse(readFileSync(join(copy, 'config/phase.json'), 'utf8'));
+  delete phase.platform;
+  writeFileSync(join(copy, 'config/phase.json'), `${JSON.stringify(phase, null, 2)}\n`);
+  assert.ok(validateRepositoryAt(copy).some((failure) => failure.includes('without the config/phase.json platform grant')));
 });

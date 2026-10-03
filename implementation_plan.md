@@ -58,20 +58,6 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 - Platform code is dependency-free ESM JavaScript with JSDoc types and a hand-written `.d.ts`. It runs on Node 26 for tests and on Workers in consumers, so `npm run check` stays credential-free with no new runtime dependencies.
 - Provider-reading commands stay outside `npm run check` and are tested against recorded fixtures.
 
-### BASE-015 — [OPS] Permit a shared platform edge-code area
-
-- Dependency: BASE-014 plan-only PR merged with successful post-merge CI.
-- Why: `config/phase.json`, `scripts/repository-contract.mjs`, the README, the control map and release management forbid all application code. The consolidation needs baseline to own shared edge code without becoming a product repository.
-- Scope: Add an explicit `platform` grant to `config/phase.json`: path `platform/`, purpose shared edge code only. Keep `applicationDevelopment: false`.
-  - Teach the repository contract to accept `platform/` only when the grant exists.
-  - Keep rejecting `src`, `app`, `apps`, `game`, `pages`, `public`, `workers` and `functions`.
-  - Add a contract test for the grant, the still-forbidden paths and a phase file without the grant.
-  - Update the README, `docs/CONTROL-MAP.md`, `docs/RELEASE-MANAGEMENT.md` and `docs/OWNERSHIP.md`: baseline may hold shared edge code, has no deployment target and never deploys a Worker itself.
-- Non-goals: No platform code yet, no product routes, no dependency, workflow, version, release or provider change.
-- Acceptance: The contract passes with an empty or absent `platform/` and fails for each forbidden application path or a missing grant. The documentation states the same boundary.
-- Validation: Pinned `npm ci`, focused repository-contract tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: `config/phase.json`, `scripts/repository-contract.mjs`, `tests/repository-contract.test.mjs`, `README.md`, `docs/CONTROL-MAP.md`, `docs/RELEASE-MANAGEMENT.md` and `docs/OWNERSHIP.md`.
-
 ### BASE-016 — [OPS] Declare the Cloudflare desired state
 
 - Dependency: BASE-015 merged.
