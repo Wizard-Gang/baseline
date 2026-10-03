@@ -1,12 +1,12 @@
 # baseline
 
-`baseline` is the WizardGang change-management reference implementation. It contains governance, executable repository contracts, CI, provider policy, and a release path. It intentionally contains no application or product code.
+`baseline` is the WizardGang change-management reference implementation. It contains governance, executable repository contracts, CI, provider policy, and a release path. It intentionally contains no application or product code. Its one code grant is `platform/`, which may hold shared edge code that consuming repositories vendor; baseline has no deployment target and never deploys a Worker itself.
 
 The contract gate is `npm ci && npm run check && npm run audit:dependencies`. A controlled change then requires an exact-head pull request, current required checks, a squash merge, and post-merge verification. Successful exact-current-main CI cuts or verifies an annotated semantic tag and explicitly dispatches Release at that tag; the source and assets must reproduce. [Change management](docs/CHANGE-MANAGEMENT.md), [release management](docs/RELEASE-MANAGEMENT.md), and [ownership](docs/OWNERSHIP.md) define the operating sequence.
 
 [The control map](docs/CONTROL-MAP.md) lists every committed guard, its authority, and the evidence needed to verify it. Repository auto-merge is available for an individually configured PR; required checks, squash-only merge, and the controlled record still govern that PR.
 
-`config/phase.json` keeps application development disabled. The repository can become an application seed only after the contract has passed local tests and a live provider exercise covering a PR, merge, tag, immutable GitHub Release, asset digest, and provenance attestation. Until that proof exists, changes should improve this reference implementation only.
+`config/phase.json` keeps application development disabled and declares the `platform` grant: path `platform/`, shared edge code only. The repository contract accepts `platform/` only under that exact grant and keeps rejecting the application paths `src`, `app`, `apps`, `game`, `pages`, `public`, `workers` and `functions`. The repository can become an application seed only after the contract has passed local tests and a live provider exercise covering a PR, merge, tag, immutable GitHub Release, asset digest, and provenance attestation. Until that proof exists, changes should improve this reference implementation only.
 
 ## Authority
 
