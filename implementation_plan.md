@@ -58,30 +58,8 @@ This queue builds the platform half of the Cloudflare consolidation for the four
 - Platform code is dependency-free ESM JavaScript with JSDoc types and a hand-written `.d.ts`. It runs on Node 26 for tests and on Workers in consumers, so `npm run check` stays credential-free with no new runtime dependencies.
 - Provider-reading commands stay outside `npm run check` and are tested against recorded fixtures.
 - `npm run verify:cloudflare` is the read-only live drift check against `config/cloudflare.json` (GET only, runtime `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). It exits 0 converged, 1 drift, 2 missing credentials, 3 denied read access and 4 other failures. Against the recorded 2026-10-03 account it reports 28 missing, 38 unexpected and 4 mismatched items; Phases 1, 3 and 4 close them. Later tasks and the runbook use it as their precondition and read-back, and extend its fixtures rather than adding a second reader.
+- `platform/wg-edge/` is the shared Worker shell (`createEdge`). It reads `WG_APP` (var), `WG_OPS_TOKEN` and `WG_SESSION_KEY` (Secrets Store bindings or secrets), `WG_DB` (D1 `wizardgang`) and `WG_R2` (R2 `wizardgang`). Its `WORKERS` table mirrors the hosts, aliases and R2 prefixes in `config/cloudflare.json`, and a test fails if they differ. The helpers use `records(app, collection, id, body, owner, created_at, updated_at, expires_at)` with primary key `(app, collection, id)` and `events(app, kind, at, body, expires_at)`, with JSON-text bodies and integer-millisecond times; the test fake's schema in `tests/fixtures/wg-edge-fakes.mjs` is a stand-in until the migration exists. `/version.json` reports `app`, `version` and the 40-character `commit` passed to `createEdge`.
 - `config/cloudflare.json` is the desired Cloudflare state, and `scripts/cloudflare-desired-state.mjs` is its closed validator, enforced by the repository contract. Later tasks read the Workers, hosts, storage names, secret names and settings from it rather than restating them. Its compatibility date is 2026-08-31, the newest live date on 2026-10-03, with `nodejs_compat` as the only flag. The demo declares 17 Worker secret names from `config/worker-secrets.json` on `3693e71`, without `DEMO_ADMIN_*`; the other three Workers declare none. The R2 bucket expires `demo/uploads/` after 1 day, matching the demo's 24-hour visitor uploads.
-
-### BASE-018 — [FEAT] Add the wg-edge Worker shell
-
-- Dependency: BASE-016 merged.
-- Why: Four Workers implement host checks, version and health output, admin auth (in three schemes), headers and errors differently. One audited shell removes that divergence.
-- Scope: Add `platform/wg-edge/`, a fetch/scheduled wrapper around an app handler:
-  - host guard against the Worker's declared hosts, with `www` → apex 308 for `wizardgang`;
-  - `/version.json`, `/health.json` and `robots.txt`;
-  - the `/admin/*` operator gate, lifted from SharkTank's fail-closed `opsAuthorized` (`src/worker/index.ts` at `a031820`, before ST-146 deletes it):
-    - Bearer or Basic over TLS only;
-    - constant-time comparison;
-    - deny when `WG_OPS_TOKEN` is unset;
-  - security headers;
-  - JSON or HTML 404s chosen by `Accept`;
-  - a top-level error boundary that never leaks stack traces;
-  - structured JSON logs;
-  - `records` and `events` D1 helpers and an R2 helper, all scoped by `WG_APP` so no app can address another app's rows or keys;
-  - a TTL sweeper that deletes expired `records` and `events` rows for its own `WG_APP`, called from the app's scheduled handler.
-  - Tests cover every item, using Node `Request`/`Response`, a `node:sqlite`-backed D1 fake and an in-memory R2 fake.
-- Non-goals: No product routes, sessions beyond exposing `WG_SESSION_KEY`, DDL, vendoring, wrangler config, deployment, consumer adoption or provider change.
-- Acceptance: Tests prove fail-closed admin denial (missing token, plain HTTP, wrong scheme or credential), host rejection, cross-app isolation in D1 and R2, sweeper scoping, error-boundary redaction and both 404 forms.
-- Validation: Pinned `npm ci`, focused shell tests, canonical `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: `config/cloudflare.json`, `config/phase.json` platform grant, SharkTank `src/worker/index.ts` at `a031820` and `SECURITY.md`.
 
 ### BASE-019 — [DB] Add the universal records and events migration
 
@@ -91,7 +69,7 @@ This queue builds the platform half of the Cloudflare consolidation for the four
   - `records(app, collection, id, body JSON, owner, created_at, updated_at, expires_at)` with primary key `(app, collection, id)`.
   - `events(app, kind, at, body JSON, expires_at)`.
   - Indexes for owner, expiry and app-time lookups.
-  - Test that the migration applies cleanly in `node:sqlite` and matches the columns the BASE-018 helpers use.
+  - Test that the migration applies cleanly in `node:sqlite` and matches the columns the `platform/wg-edge/` helpers use, and switch `tests/fixtures/wg-edge-fakes.mjs` from its stand-in schema to the migration.
   - Extend the repository contract: SQL migrations may exist only under `platform/migrations/`, numbered contiguously, and never edited after merge (a hash pin per merged file).
   - Document that baseline is the only DDL owner for the shared database.
 - Non-goals: No live D1 creation or migration apply (the owner does that in Phase 3), no app-specific tables and no data migration.
@@ -108,7 +86,7 @@ This queue builds the platform half of the Cloudflare consolidation for the four
   - `name` equals the Worker label, and `WG_APP` equals the name.
   - Exactly one route: the declared host as a custom domain. `www` is allowed only for `wizardgang`.
   - `workers_dev` and `preview_urls` are false, observability is on, and the compatibility date and flags are shared.
-  - Bindings: only D1 `wizardgang`, only R2 `wizardgang`, no KV, only the declared DO classes and crons, and Secrets Store bindings only for the declared names.
+  - Bindings: only D1 `wizardgang` as `WG_DB`, only R2 `wizardgang` as `WG_R2`, no KV, only the declared DO classes and crons, and Secrets Store bindings only for the declared names (`WG_OPS_TOKEN`, `WG_SESSION_KEY`).
   - Add a vendoring mechanism on the `check-portfolio-contract` pattern. A consumer copies `platform/` into its repo with a lock file listing the baseline source commit and a SHA-256 per file. The vendored checker fails on any edit, missing file or unpinned file. A baseline command prints the lock for a given commit.
 - Non-goals: No change to any consumer repository, no deploy workflow and no provider read.
 - Acceptance: Fixture tests reject each forbidden shape. They pass the template for each of the four Workers and fail a tampered or partial vendored copy.
@@ -124,7 +102,7 @@ This queue builds the platform half of the Cloudflare consolidation for the four
   2. Run `npm ci` and `npm run check`, then the vendored conformance and pin checks.
   3. Build, then run `wrangler deploy` (wrangler pinned by the caller's lockfile) in a job bound to the caller's `production` environment, so only environment-scoped `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are used.
   4. Confirm that the new version serves 100% of traffic.
-  5. Poll the public `https://<host>/version.json` until it reports the tag and commit, and fail on timeout.
+  5. Poll the public `https://<host>/version.json` until its `version` and `commit` match the tag, and fail on timeout.
   - Actions are pinned by SHA with least-privilege permissions. Literal run blocks pass `check-workflow-shell`.
   - Extend the repository contract so the workflow has no trigger that runs in baseline itself, and baseline never deploys.
   - Document the call snippet for consumers.

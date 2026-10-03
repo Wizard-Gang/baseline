@@ -194,6 +194,10 @@ export function validateRepositoryAt(root) {
     'config/cloudflare.json', 'scripts/cloudflare-desired-state.mjs', 'tests/cloudflare-desired-state.test.mjs',
     'scripts/verify-cloudflare.mjs', 'scripts/cloudflare-drift.mjs', 'scripts/cloudflare-live-state.mjs',
     'tests/cloudflare-drift.test.mjs', 'tests/verify-cloudflare.test.mjs', 'tests/fixtures/cloudflare-2026-10-03.json',
+    ...['README.md', 'index.mjs', 'index.d.ts', 'auth.mjs', 'http.mjs', 'log.mjs', 'storage.mjs', 'workers.mjs']
+      .map((file) => `platform/wg-edge/${file}`),
+    'tests/wg-edge-http.test.mjs', 'tests/wg-edge-admin.test.mjs', 'tests/wg-edge-storage.test.mjs',
+    'tests/wg-edge-shape.test.mjs', 'tests/fixtures/wg-edge-fakes.mjs',
   ];
   const failures = [];
   for (const path of required) {
