@@ -80,6 +80,24 @@ test('workflows cannot call missing scripts, and phase cannot enable application
   assert.ok(failures.some((failure) => failure.includes('application development')));
 });
 
+test('the Cloudflare drift check exists but never runs inside check or a workflow', () => {
+  const contains = (input, text) => validateRepositoryContract(input).some((failure) => failure.includes(text));
+  let input = specimen();
+  delete input.pkg.scripts['verify:cloudflare'];
+  assert.ok(contains(input, 'missing package script verify:cloudflare'));
+  input = specimen();
+  input.pkg.scripts['verify:cloudflare'] = 'node scripts/apply-cloudflare.mjs';
+  assert.ok(contains(input, 'read-only scripts/verify-cloudflare.mjs'));
+  input = specimen();
+  input.pkg.scripts.check += ' && npm run verify:cloudflare';
+  assert.ok(contains(input, 'npm run check must not read Cloudflare'));
+  for (const [key, name] of [['ci', 'CI'], ['release', 'Release'], ['cutter', 'Release cutter']]) {
+    input = specimen();
+    input[key] += '\n        env:\n          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n';
+    assert.ok(contains(input, `${name} workflow must not read Cloudflare`));
+  }
+});
+
 test('the committed phase grants exactly platform/ for shared edge code', () => {
   const { phase } = specimen();
   assert.equal(phase.applicationDevelopment, false);
