@@ -1,18 +1,21 @@
 // Test doubles for the wg-edge storage helpers: a D1 binding backed by node:sqlite and an in-memory R2.
+// The D1 fake is built from platform/migrations/, so every helper test runs against the real schema.
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-// Test-only stand-in for the shared schema. The universal migration (BASE-019) owns the real DDL.
-const TEST_SCHEMA = `
-  CREATE TABLE records (app TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL,
-    owner TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER,
-    PRIMARY KEY (app, collection, id));
-  CREATE TABLE events (app TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, body TEXT NOT NULL, expires_at INTEGER);
-`;
+const MIGRATIONS = new URL('../../platform/migrations/', import.meta.url);
+
+/** Apply every committed migration, in file-name order, to a node:sqlite database. */
+export function applyMigrations(db) {
+  for (const file of readdirSync(MIGRATIONS).filter((name) => name.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(new URL(file, MIGRATIONS), 'utf8'));
+  }
+  return db;
+}
 
 /** A D1-shaped binding: prepare().bind().first()/all()/run(), with every executed statement recorded. */
 export function fakeD1() {
-  const db = new DatabaseSync(':memory:');
-  db.exec(TEST_SCHEMA);
+  const db = applyMigrations(new DatabaseSync(':memory:'));
   const statements = [];
   return {
     db,

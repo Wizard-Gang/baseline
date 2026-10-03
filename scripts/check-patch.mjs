@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { MIGRATIONS_DIR, PINS_FILE, validatePinHistory } from './migration-contract.mjs';
 
 const base = process.env.PATCH_BASE_SHA ?? '';
 const head = process.env.PATCH_HEAD_SHA ?? '';
@@ -24,4 +25,18 @@ if (result.status !== 0) {
   process.exitCode = 1;
 } else {
   console.log(`Committed patch whitespace passed: ${base}..${head}`);
+}
+
+// A migration pinned on the base commit is merged; the patch may add migrations but never re-pin or drop one.
+const pinsAt = (sha) => {
+  const shown = spawnSync('git', ['show', `${sha}:${MIGRATIONS_DIR}/${PINS_FILE}`], { encoding: 'utf8' });
+  if (shown.status !== 0) return null;
+  try { return JSON.parse(shown.stdout); } catch { return 'malformed'; }
+};
+const pinFailures = validatePinHistory(pinsAt(base), pinsAt(head));
+if (pinFailures.length) {
+  for (const failure of pinFailures) console.error(`FAIL ${failure}`);
+  process.exitCode = 1;
+} else {
+  console.log(`Merged migration pins unchanged: ${base}..${head}`);
 }
