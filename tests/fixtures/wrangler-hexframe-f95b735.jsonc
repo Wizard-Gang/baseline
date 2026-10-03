@@ -1,0 +1,37 @@
+{
+  // Hexframe Worker. Public routing, static assets, API 404s, and response hardening.
+  // Combat remains deterministic simulation in the browser.
+  "name": "hexframe",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-06-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "ENVIRONMENT": "development" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Every request passes through the Worker first so routing and response hardening
+    // are applied before static asset delivery.
+    "run_worker_first": true
+  },
+  "migrations": [
+    { "tag": "player-saves-v1", "new_sqlite_classes": ["PlayerSaveObject"] },
+    { "tag": "player-saves-v2-delete", "deleted_classes": ["PlayerSaveObject"] }
+  ],
+  "observability": { "enabled": true },
+  "env": {
+    "production": {
+      "name": "hexframe",
+      "workers_dev": false,
+      // account_id is deliberately absent: it is an account identifier and this file is
+      // tracked. Supply it as CLOUDFLARE_ACCOUNT_ID in the environment when deploying.
+      "routes": [{ "pattern": "hexframe.wizardgang.ai", "custom_domain": true }],
+      "vars": { "ENVIRONMENT": "production" },
+      "observability": { "enabled": true },
+      "assets": {
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "run_worker_first": true
+      }
+    }
+  }
+}

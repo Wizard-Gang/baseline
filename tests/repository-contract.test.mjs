@@ -177,3 +177,29 @@ test('a repository copy fails when the Cloudflare desired state drifts from the 
   rmSync(path);
   assert.ok(validateRepositoryAt(copy).includes('missing or empty repository authority: config/cloudflare.json'));
 });
+
+test('the vendoring source has the lock printer, its conformance files and no lock of its own', (t) => {
+  const contains = (input, text) => validateRepositoryContract(input).some((failure) => failure.includes(text));
+  const input = specimen();
+  input.pkg.scripts['vendor:lock'] = 'node platform/conformance/cli.mjs pin';
+  assert.ok(contains(input, 'vendor:lock must print the platform/ lock with scripts/vendor-lock.mjs'));
+  delete input.pkg.scripts['vendor:lock'];
+  assert.ok(contains(input, 'missing package script vendor:lock'));
+
+  const copy = mkdtempSync(join(tmpdir(), 'baseline-contract-'));
+  t.after(() => rmSync(copy, { recursive: true, force: true }));
+  cpSync(root, copy, {
+    recursive: true,
+    filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)),
+  });
+  writeFileSync(join(copy, 'platform/vendor.lock.json'), '{}\n');
+  assert.ok(validateRepositoryAt(copy).includes('baseline platform/ is the vendoring source and must not carry vendor.lock.json'));
+  rmSync(join(copy, 'platform/vendor.lock.json'));
+  for (const path of ['platform/wrangler.template.jsonc', 'platform/conformance/vendor.mjs']) {
+    const source = readFileSync(join(copy, path), 'utf8');
+    rmSync(join(copy, path));
+    assert.ok(validateRepositoryAt(copy).includes(`missing or empty repository authority: ${path}`), path);
+    writeFileSync(join(copy, path), source);
+  }
+  assert.deepEqual(validateRepositoryAt(copy), []);
+});
