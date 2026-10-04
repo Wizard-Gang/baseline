@@ -33,6 +33,10 @@ export interface EdgeEnv {
   WG_SESSION_KEY?: SecretBinding;
   WG_DB?: D1Like;
   WG_R2?: R2Like;
+  /** Numeric GitHub App ID, a plain var on the Workers the registry lists as App consumers. */
+  GITHUB_APP_ID?: string;
+  /** PKCS#8 PEM RSA key of the wg-github-app credential: a Worker secret (a Secrets Store binding also reads). */
+  GITHUB_APP_PRIVATE_KEY?: SecretBinding;
   [binding: string]: unknown;
 }
 
@@ -93,6 +97,28 @@ export const OPS_USERNAME: 'ops';
 export function readSecret(binding: unknown): Promise<string>;
 export function sessionKey(env: { WG_SESSION_KEY?: unknown }): Promise<string>;
 export function constantTimeEqual(a: string, b: string): Promise<boolean>;
+
+/** Labels mirrored from the registry's derived entries. */
+export type DerivedKeyLabel = 'demo-session' | 'identity-session' | 'identity-audit';
+export const DERIVED_KEYS: Readonly<Record<DerivedKeyLabel, Readonly<{ consumers: readonly AppName[] }>>>;
+/** 32 bytes of HKDF-SHA256 key material from WG_SESSION_KEY. Throws ConfigurationError on an undeclared label, a non-consumer Worker or a missing root. */
+export function deriveKey(env: { WG_APP?: unknown; WG_SESSION_KEY?: unknown }, label: DerivedKeyLabel): Promise<Uint8Array>;
+
+export type GitHubPermissionLevel = 'read' | 'write' | 'admin';
+export const GITHUB_APP: Readonly<{ id: 'GITHUB_APP_ID'; privateKey: 'GITHUB_APP_PRIVATE_KEY'; credential: 'wg-github-app'; consumers: readonly AppName[] }>;
+export class GitHubAppError extends Error {}
+export interface GitHubAppTokenRequest {
+  installationId: number | string;
+  /** At least one permission; the token holds exactly these. */
+  permissions: Record<string, GitHubPermissionLevel>;
+}
+export interface GitHubAppTokenOptions {
+  fetch?: typeof fetch;
+  now?: () => number;
+  cache?: Map<string, Promise<{ token: string; expiresAt: number }>>;
+}
+/** An installation token, cached per App, installation and permission set until 5 minutes before expiry. Throws GitHubAppError. */
+export function githubAppToken(env: { GITHUB_APP_ID?: unknown; GITHUB_APP_PRIVATE_KEY?: unknown }, request: GitHubAppTokenRequest, options?: GitHubAppTokenOptions): Promise<string>;
 
 export const SECURITY_HEADERS: Readonly<Record<string, string>>;
 export function json(data: unknown, status?: number, headers?: Record<string, string>): Response;

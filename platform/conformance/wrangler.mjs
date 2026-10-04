@@ -154,7 +154,10 @@ export function checkWranglerConfig(config, { label, worker, shared = DESIRED })
     failures.push(`observability.enabled must be ${shared.workerSettings.observability}`);
   }
   if (config.routes !== undefined) checkRoutes(failures, config.routes, worker);
-  checkVars(failures, config.vars, label, [...shared.secretsStoreSecrets, ...(worker.secrets ?? [])]);
+  // Every registry Worker secret is refused as a var on every Worker, not only on its consumers: a key such as
+  // GITHUB_APP_PRIVATE_KEY must never land in plain text in any wrangler config.
+  const registrySecrets = Object.values(shared.workers).flatMap((entry) => entry.secrets ?? []);
+  checkVars(failures, config.vars, label, [...shared.secretsStoreSecrets, ...(worker.secrets ?? []), ...registrySecrets]);
   if (config.assets !== undefined && exactKeys(failures, 'assets', config.assets, ['directory'], ASSET_KEYS.slice(1))
     && config.assets.binding !== undefined && config.assets.binding !== 'ASSETS') failures.push('assets.binding must be ASSETS');
   checkSingleBinding(failures, 'd1_databases', config.d1_databases, shared.d1.binding, 'database_name', shared.d1.name, 'database_id', DATABASE_ID);
