@@ -226,7 +226,8 @@ export function validateRepositoryAt(root) {
     'platform/deploy/README.md', 'platform/deploy/index.d.ts', 'platform/deploy/verify.mjs', 'tests/deploy-verify.test.mjs',
     'scripts/cloudflare-token-targets.mjs', ...Object.values(TOKEN_SCRIPTS).map((file) => `scripts/${file}`),
     'tests/cloudflare-token-discovery.test.mjs', 'tests/cloudflare-token-rotation.test.mjs', 'tests/fixtures/fake-gh.mjs',
-    'docs/CLOUDFLARE-RUNBOOK.md', 'tests/cloudflare-runbook.test.mjs',
+    'docs/CLOUDFLARE-RUNBOOK.md', 'tests/cloudflare-runbook.test.mjs', 'tests/fixtures/runbook.mjs',
+    'docs/SECRETS-RUNBOOK.md', 'tests/secrets-runbook.test.mjs',
     'config/secrets.json', 'scripts/secret-registry.mjs', 'tests/secret-registry.test.mjs',
   ];
   const failures = [];

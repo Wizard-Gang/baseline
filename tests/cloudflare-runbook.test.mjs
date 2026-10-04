@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -12,6 +12,8 @@ import { validateRepositoryAt } from '../scripts/repository-contract.mjs';
 import { loadSecretRegistry } from '../scripts/secret-registry.mjs';
 import { runVerifyCloudflare } from '../scripts/verify-cloudflare.mjs';
 import { ENV, fakeFetch, recordedResponses } from './fixtures/cloudflare-api.mjs';
+import { ACCOUNT_ID_INLINE, WRANGLER, brokenLinks, commands, hasPartsInOrder, npmScripts, repositoryLoops, sections,
+  sharedRunbookFailures } from './fixtures/runbook.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -40,22 +42,11 @@ const inventory = {
 const registry = loadSecretRegistry(root);
 // Names the runbook introduces that are not Cloudflare resources: the shell's binding names and response header, the
 // session variable for the Secrets Store ID, and the registry's console credentials and GitHub-environment names.
-const VOCABULARY = new Set(['content-security-policy', 'WG_DB', 'WG_R2', 'WG_APP', 'STORE_ID',
+const VOCABULARY = new Set(['content-security-policy', 'WG_DB', 'WG_R2', 'WG_APP',
   ...[...registry.entries, ...registry.exceptions].flatMap(({ credential }) => (credential ? [credential] : [])),
   ...registry.entries.filter(({ home }) => home === 'github-environment').map(({ name }) => name)]);
 const known = (name) => VOCABULARY.has(name) || Object.values(inventory).some((names) => names.has(name));
 const placeholder = (arg) => /^(?:<|"\$|\$)/.test(arg);
-
-function sections() {
-  const found = [];
-  let part = null;
-  for (const line of runbook.split('\n')) {
-    if (line.startsWith('## ')) part = line.slice(3);
-    else if (line.startsWith('### ')) found.push({ part, title: line.slice(4), body: '' });
-    else if (found.length && found.at(-1).part === part) found.at(-1).body += `${line}\n`;
-  }
-  return found;
-}
 
 test('the README and the control map link the runbook', () => {
   assert.match(read('README.md'), /\]\(docs\/CLOUDFLARE-RUNBOOK\.md\)/);
@@ -63,15 +54,14 @@ test('the README and the control map link the runbook', () => {
 });
 
 test('every relative link in the runbook resolves', () => {
-  const links = [...runbook.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]).filter((link) => !/^[a-z]+:/.test(link));
+  const { links, broken } = brokenLinks(runbook, root);
   assert.ok(links.length >= 5);
-  for (const link of links) {
-    assert.ok(existsSync(resolve(root, 'docs', link.split('#')[0])), `broken link ${link}`);
-  }
+  assert.deepEqual(broken, []);
+  assert.ok(links.includes('SECRETS-RUNBOOK.md'), 'the Cloudflare runbook links the secrets runbook');
 });
 
 test('every npm script the runbook runs exists, including the owner-run Cloudflare commands', () => {
-  const used = new Set([...runbook.matchAll(/npm run (?:--silent )?([a-z][a-z0-9:-]*)/g)].map((match) => match[1]));
+  const used = npmScripts(runbook);
   for (const name of used) assert.ok(Object.hasOwn(scripts, name), `npm run ${name} is not a package script`);
   for (const name of ['check', 'verify:cloudflare', 'discover:cloudflare-token-targets', 'rotate:cloudflare-token']) {
     assert.ok(used.has(name), `the runbook must use npm run ${name}`);
@@ -89,24 +79,23 @@ test('every npm script the runbook runs exists, including the owner-run Cloudfla
 });
 
 test('every step has a precondition, a command, a read-back and a rollback', () => {
-  const steps = [...sections(), ...runbook.split('\n## ').filter((part) => part.startsWith('Deploy rollback'))
+  const steps = [...sections(runbook), ...runbook.split('\n## ').filter((part) => part.startsWith('Deploy rollback'))
     .map((body) => ({ part: 'Deploy rollback', title: 'Deploy rollback', body }))];
   const count = (part) => steps.filter((step) => step.part.startsWith(part)).length;
   assert.deepEqual([count('Phase 1'), count('Phase 3'), count('Deploy rollback'), count('Later retirements')], [5, 6, 1, 7]);
   for (const { title, body } of steps) {
-    const at = ['**Precondition:**', '**Command:**', '**Read-back:**', '**Rollback:**'].map((label) => body.indexOf(`- ${label}`));
-    assert.ok(at.every((index, i) => index >= 0 && (i === 0 || index > at[i - 1])), `${title} must list its four parts in order`);
+    assert.ok(hasPartsInOrder(body, ['Precondition', 'Command', 'Read-back', 'Rollback']), `${title} must list its four parts in order`);
   }
 });
 
 test('the runbook names only resources from config/cloudflare.json and the 2026-10-03 inventory', () => {
   const uses = [];
   const add = (kind, pattern) => { for (const match of runbook.matchAll(pattern)) uses.push([kind, match[1]]); };
-  add('workers', /wr delete ([^\s`]+)/g);
-  add('workers', /wr (?:secret \w+ \S+|deployments list) --name (\S+?)[`;\s]/g);
-  add('d1', /wr d1 (?:create|delete|info|execute|export|time-travel (?:info|restore)) ([^\s`]+)/g);
-  add('r2', /wr r2 bucket (?:create|delete|info|lifecycle (?:set|list|add|remove)) ([^\s`]+)/g);
-  add('kv', /wr kv namespace (?:create|delete) ([^\s`]+)/g);
+  add('workers', /wrangler@4\.147\.0 delete ([^\s`]+)/g);
+  add('workers', /wrangler@4\.147\.0 (?:secret \w+ \S+|deployments list) --name (\S+?)[`;\s]/g);
+  add('d1', /wrangler@4\.147\.0 d1 (?:create|delete|info|execute|export|time-travel (?:info|restore)) ([^\s`]+)/g);
+  add('r2', /wrangler@4\.147\.0 r2 bucket (?:create|delete|info|lifecycle (?:set|list|add|remove)) ([^\s`]+)/g);
+  add('kv', /wrangler@4\.147\.0 kv namespace (?:create|delete) ([^\s`]+)/g);
   add('secrets', /--name ([A-Z][A-Z0-9_]+)/g);
   add('secrets', /gh secret (?:set|delete) ([^\s`]+)/g);
   add('repositories', /--repo ([^\s`]+)/g);
@@ -117,8 +106,8 @@ test('the runbook names only resources from config/cloudflare.json and the 2026-
   add('workers', /(?:Worker secret|Durable Object) ([a-z0-9-]+):/g);
   add('stores', /Secrets Store secret ([a-z0-9_]+):/g);
   add('workers', /custom domain \S+ → ([a-z0-9-]+)/g);
-  for (const match of [...runbook.matchAll(/git -C \.\.\/([^\s`]+)/g)].filter((m) => !placeholder(m[1]))) {
-    assert.ok([...inventory.repositories].some((repository) => repository.endsWith(`/${match[1]}`)), `unknown checkout ${match[1]}`);
+  for (const match of [...runbook.matchAll(/git -C ~\/Documents\/GitHub\/([^\s`]+)/g)].filter((m) => !placeholder(m[1]))) {
+    assert.ok(match[1] === 'baseline' || [...inventory.repositories].some((repository) => repository.endsWith(`/${match[1]}`)), `unknown checkout ${match[1]}`);
   }
   assert.ok(uses.length > 40);
   for (const [kind, name] of uses.filter(([, name]) => !placeholder(name))) {
@@ -136,14 +125,14 @@ test('the runbook covers every Phase 1 delete, Phase 3 resource and later retire
   const orphans = [['workers', 'wizardgang-portfolio-staging'], ['d1', 'wizardgang-demo-data'], ['r2', 'wizardgang-demo-r2-preview'],
     ['kv', 'wg-gateway-status-dev'], ['kv', 'wg-gateway-status-prod']];
   for (const [kind, name] of orphans) assert.ok(inventory[kind].has(name) && runbook.includes(`delete ${name}`), `Phase 1 must delete ${name}`);
-  assert.match(runbook, /for s in ADMIN_PASSWORD ADMIN_SESSION_SECRET ADMIN_USERNAME; do wr secret delete "\$s" --name hexframe; done/);
-  for (const name of desired.d1) assert.ok(runbook.includes(`wr d1 create ${name}`) && runbook.includes(`--json | jq -r .uuid`));
+  assert.match(runbook, /for s in ADMIN_PASSWORD ADMIN_SESSION_SECRET ADMIN_USERNAME; do npx --yes wrangler@4\.147\.0 secret delete "\$s" --name hexframe; done/);
+  for (const name of desired.d1) assert.ok(runbook.includes(`${WRANGLER} d1 create ${name}`) && runbook.includes(`--json | jq -r .uuid`));
   for (const file of Object.keys(JSON.parse(read('platform/migrations/pins.json')))) {
     assert.ok(runbook.includes(`--remote --file platform/migrations/${file}`), `Phase 3 must apply ${file}`);
   }
-  for (const { name } of desired.r2) assert.ok(runbook.includes(`wr r2 bucket create ${name}`) && runbook.includes(`lifecycle set ${name}`));
+  for (const { name } of desired.r2) assert.ok(runbook.includes(`${WRANGLER} r2 bucket create ${name}`) && runbook.includes(`lifecycle set ${name}`));
   for (const { secrets: names } of desired.secretsStore) {
-    for (const name of names) assert.match(runbook, new RegExp(`secrets-store secret create "\\$STORE_ID" --name ${name} --scopes workers --remote`));
+    for (const name of names) assert.match(runbook, new RegExp(`secrets-store secret create "\\$S" --name ${name} --scopes workers --remote`));
   }
   // Every live Worker that is neither declared nor a Phase 1 orphan retires after its rename.
   const old = [...inventory.workers].filter((name) => !Object.hasOwn(desired.workers, name) && name !== 'wizardgang-portfolio-staging');
@@ -155,7 +144,7 @@ test('the runbook covers every Phase 1 delete, Phase 3 resource and later retire
 });
 
 test('the step 3.4 lifecycle rules equal config/cloudflare.json', () => {
-  const block = /<<'JSON'\n([\s\S]*?)\n\s*JSON\n/.exec(runbook);
+  const block = /<<'JSON'[^\n]*\n([\s\S]*?)\n\s*JSON\n/.exec(runbook);
   assert.ok(block, 'step 3.4 must carry the lifecycle file');
   const { rules } = JSON.parse(block[1]);
   const [bucket] = desired.r2;
@@ -169,11 +158,23 @@ test('the starting drift counts match the recorded inventory', async () => {
   assert.ok(runbook.includes(`(${count('Missing')} missing, ${count('Unexpected')} unexpected and ${count('Mismatched')} mismatched items)`));
 });
 
-test('the runbook holds no account ID, binding ID or token value', () => {
-  assert.doesNotMatch(runbook, /\b[0-9a-f]{32}\b/i);
-  assert.doesNotMatch(runbook, /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i);
-  assert.doesNotMatch(runbook, /[A-Za-z0-9_-]{40,}/);
-  assert.doesNotMatch(runbook, /--value\b/);
+test('every command is self-contained and the runbook holds no account ID, binding ID or token value', () => {
+  assert.deepEqual(sharedRunbookFailures(runbook), []);
+  assert.ok(commands(runbook).length > 80);
+  // The account ID is only ever read inline from the wrangler login, and every repository loop is exactly the config repositories.
+  const accountReads = [...runbook.matchAll(/A="\$\([^\n]*?\)"/g)].map((match) => match[0]);
+  assert.ok(accountReads.length >= 4 && accountReads.every((read) => read === ACCOUNT_ID_INLINE), 'the account ID is read inline from whoami');
+  assert.match(runbook, /CLOUDFLARE_ACCOUNT_ID="\$\(npx --yes wrangler@4\.147\.0 whoami --json \| jq -r '\.accounts\[0\]\.id'\)" CLOUDFLARE_API_TOKEN="\$\(security find-generic-password -s wg-cloudflare-audit -w\)" npm run --silent verify:cloudflare/);
+  const loops = repositoryLoops(runbook);
+  assert.ok(loops.length >= 2);
+  for (const loop of loops) assert.deepEqual(loop, [...inventory.repositories]);
+});
+
+test('step 1.5 greps only the Hexframe Worker source', () => {
+  const step = sections(runbook).find(({ title }) => title.startsWith('1.5 '));
+  const greps = [...step.body.matchAll(/git -C \S+ grep [^\n]*/g)].map((match) => match[0]);
+  assert.equal(greps.length, 2);
+  for (const grep of greps) assert.ok(grep.endsWith(' -- src'), `scope the grep to the Worker source: ${grep}`);
 });
 
 test('the repository contract requires the runbook and its tests', () => {
@@ -181,7 +182,7 @@ test('the repository contract requires the runbook and its tests', () => {
   try {
     cpSync(root, copy, { recursive: true, filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)) });
     assert.deepEqual(validateRepositoryAt(copy), []);
-    for (const path of [RUNBOOK, 'tests/cloudflare-runbook.test.mjs']) {
+    for (const path of [RUNBOOK, 'tests/cloudflare-runbook.test.mjs', 'tests/fixtures/runbook.mjs']) {
       rmSync(join(copy, path));
       assert.ok(validateRepositoryAt(copy).includes(`missing or empty repository authority: ${path}`), `${path} must be required`);
       cpSync(join(root, path), join(copy, path));
