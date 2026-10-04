@@ -33,7 +33,7 @@ node platform/conformance/cli.mjs render --worker <label> --store-id <default_se
 [`../wrangler.template.jsonc`](../wrangler.template.jsonc) is the conforming shape. `render` fills it in for one Worker, adding its declared Durable Objects (bound under their class names, with a first migration) and its crons. A Worker that already has Durable Object history keeps its own `migrations`; only their net result is checked. The checker compares the config with the Worker's entry in `desired.mjs`, which mirrors baseline `config/cloudflare.json` and is tested against it:
 
 - **Top level only.** No `env` blocks, no `account_id` and no `route`. Only these keys are allowed: `$schema`, `name`, `main`, `compatibility_date`, `compatibility_flags`, `workers_dev`, `preview_urls`, `routes`, `observability`, `vars`, `assets`, `d1_databases`, `r2_buckets`, `durable_objects`, `migrations`, `triggers`, `secrets_store_secrets` and `upload_source_maps`.
-- **Identity.** `name` is the Worker label, and `vars.WG_APP` equals it. No other `WG_*` var is allowed, and no declared secret name may be a var. Every var is a string.
+- **Identity.** `name` is the Worker label, and `vars.WG_APP` equals it. No other `WG_*` var is allowed, and no secret name may be a var: neither the Secrets Store names nor any Worker secret the registry declares for any Worker (so `GITHUB_APP_PRIVATE_KEY` is refused on every Worker, not only on the demo). Every var is a string.
 - **Routes.** The declared host appears exactly once as a custom domain. The only other entries allowed are declared aliases (only `www.wizardgang.ai`, on `wizardgang`). No zone routes.
 - **Settings.** `workers_dev: false`, `preview_urls: false` and `observability.enabled: true`. The shared `compatibility_date` and exactly the shared `compatibility_flags`.
 - **Bindings.**
@@ -42,7 +42,7 @@ node platform/conformance/cli.mjs render --worker <label> --store-id <default_se
   - KV: none.
   - Durable Objects: bindings to exactly the declared classes, with no `script_name`. The net `migrations` (create, delete, rename, transfer) must leave exactly those classes.
   - Crons: `triggers.crons` exactly as declared.
-  - Secrets Store: only `WG_OPS_TOKEN` and `WG_SESSION_KEY`, each with `secret_name` equal to its binding and a 32-hex `store_id`.
+  - Secrets Store: only `WG_OPS_TOKEN` and `WG_SESSION_KEY`, each with `secret_name` equal to its binding and a 32-hex `store_id`. Derived keys are not bindings: wg-edge derives them from `WG_SESSION_KEY`. `GITHUB_APP_PRIVATE_KEY` is a Worker secret, set with `wrangler secret put`, never a Secrets Store binding or a var; `GITHUB_APP_ID` is a plain var.
   - `assets` may bind only `ASSETS`. Any other binding key is refused as an unknown top-level key.
 
 Exit codes are 0 for conformant, 1 for nonconformant and 2 for a usage error.

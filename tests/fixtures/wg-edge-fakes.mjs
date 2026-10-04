@@ -1,5 +1,7 @@
-// Test doubles for the wg-edge storage helpers: a D1 binding backed by node:sqlite and an in-memory R2.
+// Test doubles for wg-edge: a D1 binding backed by node:sqlite, an in-memory R2, freshly generated RSA keys and a fake
+// GitHub installation-token endpoint.
 // The D1 fake is built from platform/migrations/, so every helper test runs against the real schema.
+import { generateKeyPairSync } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -60,4 +62,34 @@ export function fakeR2() {
       return { objects: page.map(view), truncated, ...(truncated ? { cursor: String(start + limit) } : {}) };
     },
   };
+}
+
+/** A throwaway RSA key pair generated per call; no committed key exists. `pkcs1` is GitHub's download format. */
+export function rsaKeys(modulusLength = 2048) {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength });
+  return {
+    pkcs8: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    pkcs1: privateKey.export({ type: 'pkcs1', format: 'pem' }),
+    publicKey,
+  };
+}
+
+/**
+ * A fetch double for POST /app/installations/<id>/access_tokens. Each call is recorded with its JWT; `respond` may
+ * replace the default 201, which grants exactly the requested permissions for one hour from `now()`.
+ */
+export function fakeGitHub({ now = () => Date.now(), respond } = {}) {
+  const calls = [];
+  let issued = 0;
+  async function fetch(url, init) {
+    const body = JSON.parse(init.body);
+    const jwt = init.headers.authorization.replace(/^Bearer /, '');
+    calls.push({ url, method: init.method, headers: init.headers, body, jwt });
+    if (respond) return respond({ url, body, jwt, call: calls.length });
+    issued += 1;
+    const token = `ghs_${String(issued).padStart(36, '0')}`;
+    const expires_at = new Date(now() + 3_600_000).toISOString();
+    return new Response(JSON.stringify({ token, expires_at, permissions: body.permissions, repository_selection: 'selected' }), { status: 201 });
+  }
+  return { fetch, calls };
 }

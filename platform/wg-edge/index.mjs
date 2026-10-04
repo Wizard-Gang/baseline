@@ -7,7 +7,9 @@ import { createLogger } from './log.mjs';
 import { ConfigurationError, WORKERS, classifyHost, workerIdentity } from './workers.mjs';
 
 export { OPS_USERNAME, constantTimeEqual, readSecret, sessionKey } from './auth.mjs';
+export { GITHUB_APP, GitHubAppError, githubAppToken } from './github.mjs';
 export { SECURITY_HEADERS, json, notFound, problem, text, wantsHtml } from './http.mjs';
+export { DERIVED_KEYS, deriveKey } from './keys.mjs';
 export { createLogger } from './log.mjs';
 export { bucket, events, records, sweepExpired } from './storage.mjs';
 export { ConfigurationError, WORKERS, workerIdentity } from './workers.mjs';
