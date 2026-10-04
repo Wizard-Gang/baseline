@@ -2,8 +2,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-// A stub `gh` executable on PATH, so the scripts spawn a real process. It serves secret metadata from a JSON
-// state file and appends every call's argv and stdin to a log, so tests can prove where a value travelled.
+// A stub `gh` executable on PATH, so the scripts spawn a real process. It serves secret and variable metadata from
+// a JSON state file and appends every call's argv and stdin to a log, so tests can prove where a value travelled.
 const STUB = `
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
@@ -25,18 +25,23 @@ if (argv[0] === 'api') {
   process.exit(0);
 }
 if (!repo) fail('HTTP 404: Not Found');
-const scope = env ? repo.environments[env] : repo.secrets;
+const scope = env ? repo.environments[env] : repo;
 const key = option('--repo') + (env ? ':' + env : '');
 if (!scope) fail('HTTP 404: environment not found');
+if (argv[0] === 'variable' && argv[1] === 'list') {
+  if (state.fail.includes('vars:' + key)) fail('HTTP 403: Resource not accessible');
+  process.stdout.write(JSON.stringify(Object.entries(scope.variables).map(([name, updatedAt]) => ({ name, updatedAt }))));
+  process.exit(0);
+}
 if (argv[0] === 'secret' && argv[1] === 'list') {
   if (state.fail.includes('list:' + key) || (state.writes.includes(key) && state.fail.includes('relist:' + key))) fail('HTTP 403: Resource not accessible');
-  process.stdout.write(JSON.stringify(Object.entries(scope).map(([name, updatedAt]) => ({ name, updatedAt }))));
+  process.stdout.write(JSON.stringify(Object.entries(scope.secrets).map(([name, updatedAt]) => ({ name, updatedAt }))));
   process.exit(0);
 }
 if (argv[0] === 'secret' && argv[1] === 'set') {
   if (state.fail.includes('set:' + key)) fail('HTTP 403: Resource not accessible by integration');
   state.writes.push(key);
-  if (!state.fail.includes('stale:' + key)) scope[argv[2]] = new Date(Date.parse(state.now) + 1000 * state.writes.length).toISOString().replace('.000', '');
+  if (!state.fail.includes('stale:' + key)) scope.secrets[argv[2]] = new Date(Date.parse(state.now) + 1000 * state.writes.length).toISOString().replace('.000', '');
   save();
   process.exit(0);
 }
@@ -47,20 +52,31 @@ export const REPOSITORIES = Object.freeze([
   'Wizard-Gang/WizardGang', 'SouthernGentlemen/wizardgang-architecture-demo', 'Wizard-Gang/SharkTank', 'Wizard-Gang/Hexframe',
 ]);
 
-/** Every declared repository with a production environment holding the token, and nothing else. */
+export const DEMO = 'SouthernGentlemen/wizardgang-architecture-demo';
+export const DEPLOY_DATE = '2026-10-04T18:34:10Z';
+export const DEMO_DATE = '2026-10-04T18:45:02Z';
+const scope = (secrets = {}, variables = {}) => ({ secrets, variables });
+
+/** Every config repository exactly as config/secrets.json registers it, and nothing else. */
 export function convergedRepos() {
-  return Object.fromEntries(REPOSITORIES.map((name) => [name, {
-    secrets: {}, environments: { production: { CLOUDFLARE_API_TOKEN: '2026-08-31T22:10:05Z', CLOUDFLARE_ACCOUNT_ID: '2026-08-29T01:57:48Z' } },
-  }]));
+  const repos = Object.fromEntries(REPOSITORIES.map((name) => [name, { ...scope(), environments: {
+    production: scope({ CLOUDFLARE_API_TOKEN: DEPLOY_DATE }, { CLOUDFLARE_ACCOUNT_ID: '2026-10-04T19:00:00Z' }),
+  } }]));
+  repos[DEMO].environments.production.secrets.CLOUDFLARE_API_TOKEN = DEMO_DATE;
+  repos[DEMO].environments['git-demo'] = scope({ GITHUB_APP_PRIVATE_KEY: '2026-10-04T19:10:00Z' }, { GITHUB_APP_ID: '2026-10-04T19:10:00Z' });
+  return repos;
 }
 
-/** The 2026-10-03 live read: the demo holds the token at repository level and has an empty production environment. */
+/** The 2026-10-04 live read (names and dates only): CLOUDFLARE_ACCOUNT_ID is still a secret everywhere. */
 export function recordedRepos() {
-  const repos = convergedRepos();
-  repos['SouthernGentlemen/wizardgang-architecture-demo'] = {
-    secrets: { CLOUDFLARE_ACCOUNT_ID: '2026-08-31T18:29:27Z', CLOUDFLARE_API_TOKEN: '2026-08-31T22:10:07Z' },
-    environments: { production: {} },
-  };
+  const repos = Object.fromEntries(REPOSITORIES.map((name) => [name, { ...scope(), environments: {
+    production: scope({ CLOUDFLARE_ACCOUNT_ID: '2026-10-04T18:36:00Z', CLOUDFLARE_API_TOKEN: DEPLOY_DATE }),
+  } }]));
+  repos[DEMO].secrets.GIT_DEMO_PR_TOKEN = '2026-09-02T16:20:00Z';
+  repos[DEMO].environments.production.secrets.CLOUDFLARE_API_TOKEN = DEMO_DATE;
+  repos[DEMO].environments.production.variables.CLOUDFLARE_DO_NAMESPACE = '2026-08-31T18:29:30Z';
+  repos['Wizard-Gang/SharkTank'].variables.PRODUCTION_DEPLOY_ENABLED = '2026-09-20T10:00:00Z';
+  repos['Wizard-Gang/Hexframe'].environments.production.variables.PRODUCTION_HOST = '2026-09-14T09:00:00Z';
   return repos;
 }
 
@@ -70,7 +86,7 @@ export function fakeGh({ repos = convergedRepos(), fail = [], authenticated = tr
   const log = join(dir, 'calls.jsonl');
   writeFileSync(join(dir, 'gh'), `#!${process.execPath}\n${STUB}`);
   chmodSync(join(dir, 'gh'), 0o755);
-  writeFileSync(state, JSON.stringify({ repos, fail, authenticated, writes: [], now: '2026-10-03T12:00:00Z' }));
+  writeFileSync(state, JSON.stringify({ repos, fail, authenticated, writes: [], now: '2026-10-05T12:00:00Z' }));
   writeFileSync(log, '');
   return {
     env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}`, FAKE_GH_STATE: state, FAKE_GH_LOG: log },

@@ -4,13 +4,14 @@ import { dirname, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createGh } from '../scripts/cloudflare-token-targets.mjs';
-import { EXIT, runRotateCloudflareToken } from '../scripts/rotate-cloudflare-token.mjs';
-import { REPOSITORIES, convergedRepos, fakeGh, recordedRepos } from './fixtures/fake-gh.mjs';
+import { EXIT, parseArguments, runRotateCloudflareToken } from '../scripts/rotate-cloudflare-token.mjs';
+import { DEMO, DEMO_DATE, DEPLOY_DATE, REPOSITORIES, convergedRepos, fakeGh, recordedRepos } from './fixtures/fake-gh.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DEMO = 'SouthernGentlemen/wizardgang-architecture-demo';
 const VALUE = 'cf-rotation-value-must-never-print-0123';
 const ACCOUNT = 'e'.repeat(32);
+const DEPLOY = ['--credential', 'wg-cloudflare-deploy'];
+const DEPLOYED = REPOSITORIES.filter((repository) => repository !== DEMO);
 
 function cloudflare(status = 'active', seen = []) {
   return async (url, init) => {
@@ -19,7 +20,7 @@ function cloudflare(status = 'active', seen = []) {
   };
 }
 
-async function rotate({ repos = convergedRepos(), fail = [], argv = ['--apply'], input = `${VALUE}\n`, stdin, fetchImpl = cloudflare(), env = {} } = {}) {
+async function rotate({ repos = convergedRepos(), fail = [], argv = [...DEPLOY, '--apply'], input = `${VALUE}\n`, stdin, fetchImpl = cloudflare(), env = {} } = {}) {
   const gh = fakeGh({ repos, fail });
   const out = [];
   const err = [];
@@ -39,61 +40,97 @@ async function rotate({ repos = convergedRepos(), fail = [], argv = ['--apply'],
   }
 }
 
-test('apply writes each declared production environment over stdin and re-reads updatedAt', async () => {
+const tokenAt = (state, repository, environment = 'production') => state.repos[repository].environments[environment]?.secrets.CLOUDFLARE_API_TOKEN;
+
+test('wg-cloudflare-deploy writes only its mapped environments over stdin, re-reads them and leaves the demo token', async () => {
   const seen = [];
   const result = await rotate({ fetchImpl: cloudflare('active', seen), env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT } });
   assert.equal(result.code, EXIT.rotated, result.err);
-  assert.deepEqual(result.sets.map((call) => call.argv), REPOSITORIES.map((repository) =>
+  assert.deepEqual(result.sets.map((call) => call.argv), DEPLOYED.map((repository) =>
     ['secret', 'set', 'CLOUDFLARE_API_TOKEN', '--repo', repository, '--env', 'production']));
   assert.ok(result.sets.every((call) => call.stdin === VALUE), 'stdin carries exactly the value, without the newline');
-  for (const repository of REPOSITORIES) {
-    assert.match(result.out, new RegExp(`Updated ${repository} — production environment: updatedAt 2026-10-03T12:00:0\\dZ`));
+  for (const repository of DEPLOYED) {
+    assert.match(result.out, new RegExp(`Updated ${repository} — production environment CLOUDFLARE_API_TOKEN: updatedAt 2026-10-05T12:00:0\\dZ`));
     const at = result.calls.findIndex((call) => call.argv[1] === 'set' && call.argv.includes(repository));
     assert.deepEqual(result.calls[at + 1].argv, ['secret', 'list', '--repo', repository, '--env', 'production', '--json', 'name,updatedAt']);
   }
-  assert.match(result.out, /Rotation complete for all 4 target\(s\)\.$/);
+  assert.match(result.out, /^Targets for wg-cloudflare-deploy /);
+  assert.ok(!result.out.includes(`- ${DEMO}`), 'the demo is not a wg-cloudflare-deploy target');
+  assert.match(result.out, /Rotation of wg-cloudflare-deploy complete for all 3 target\(s\)\.$/);
+  assert.equal(tokenAt(result.state, DEMO), DEMO_DATE, 'the demo token survives');
+  assert.deepEqual(result.state.repos[DEMO].environments['git-demo'], convergedRepos()[DEMO].environments['git-demo']);
   assert.equal(seen.length, 1);
   assert.equal(seen[0].url, `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/tokens/verify`);
   assert.equal(seen[0].init.headers.Authorization, `Bearer ${VALUE}`);
   assert.ok(!result.out.includes(ACCOUNT) && !result.err.includes(ACCOUNT));
 });
 
-test('a repository-level token is reported as drift and never written', async () => {
-  const result = await rotate({ repos: recordedRepos(), fetchImpl: cloudflare(), argv: ['--apply'] });
+test('wg-cloudflare-demo writes only the demo production environment, through the registry exception', async () => {
+  const result = await rotate({ argv: ['--credential', 'wg-cloudflare-demo', '--apply'] });
   assert.equal(result.code, EXIT.rotated, result.err);
-  assert.match(result.err, /repository-level CLOUDFLARE_API_TOKEN is outside the production environment; it is reported and never updated/);
-  assert.ok(result.sets.every((call) => call.argv.includes('--env')), 'every write names an environment');
-  assert.ok(result.sets.some((call) => call.argv.includes(DEMO)), 'the demo production environment is written');
-  assert.equal(result.state.repos[DEMO].secrets.CLOUDFLARE_API_TOKEN, '2026-08-31T22:10:07Z', 'the repository-level secret is untouched');
-  assert.ok(result.state.repos[DEMO].environments.production.CLOUDFLARE_API_TOKEN);
+  assert.deepEqual(result.sets.map((call) => call.argv), [['secret', 'set', 'CLOUDFLARE_API_TOKEN', '--repo', DEMO, '--env', 'production']]);
+  assert.notEqual(tokenAt(result.state, DEMO), DEMO_DATE);
+  for (const repository of DEPLOYED) assert.equal(tokenAt(result.state, repository), DEPLOY_DATE, `${repository} keeps the deploy token`);
+  assert.match(result.out, /Rotation of wg-cloudflare-demo complete for all 1 target\(s\)\.$/);
+});
+
+test('recorded drift is reported and never written; only the mapped token secret changes', async () => {
+  const before = recordedRepos();
+  const result = await rotate({ repos: before });
+  assert.equal(result.code, EXIT.rotated, result.err);
+  assert.match(result.err, /^Registry drift, reported and never written \(9\):/);
+  assert.match(result.err, /repository-level secret GIT_DEMO_PR_TOKEN is outside the registry/);
+  assert.match(result.err, /stores CLOUDFLARE_ACCOUNT_ID as a secret; the registry makes it a variable/);
+  assert.ok(result.sets.every((call) => call.argv[2] === 'CLOUDFLARE_API_TOKEN' && call.argv.includes('--env')));
+  for (const [repository, repo] of Object.entries(before)) {
+    const after = result.state.repos[repository];
+    assert.deepEqual(after.secrets, repo.secrets);
+    assert.deepEqual(after.variables, repo.variables);
+    assert.equal(after.environments.production.secrets.CLOUDFLARE_ACCOUNT_ID, repo.environments.production.secrets.CLOUDFLARE_ACCOUNT_ID);
+  }
+});
+
+test('an unknown, non-rotatable or missing credential is a usage error before any read or write', async () => {
+  for (const credential of ['wg-cloudflare-unknown', 'wg-cloudflare-billing', 'wg-cloudflare-audit', 'wg-github-app', VALUE]) {
+    const result = await rotate({ argv: ['--credential', credential, '--apply'] });
+    assert.equal(result.code, EXIT.usage, credential);
+    assert.deepEqual(result.calls, [], 'nothing is read or written');
+    assert.match(result.err, /one of wg-cloudflare-demo, wg-cloudflare-deploy\. Nothing was read or written\./);
+  }
+  for (const argv of [['--apply'], [], ['--credential'], [...DEPLOY, ...DEPLOY], ['--owner', 'Wizard-Gang', ...DEPLOY], [...DEPLOY, '--skip-verify'], [...DEPLOY, '--apply', VALUE]]) {
+    const result = await rotate({ argv });
+    assert.equal(result.code, EXIT.usage, argv.join(' '));
+    assert.deepEqual(result.calls, []);
+  }
+  assert.deepEqual(parseArguments([...DEPLOY, '--apply', '--skip-verify']), { credential: 'wg-cloudflare-deploy', apply: true, skipVerify: true });
 });
 
 test('without --apply nothing is read from stdin or written', async () => {
   let read = false;
   const stdin = Readable.from((function* () { read = true; yield VALUE; })());
-  const result = await rotate({ repos: recordedRepos(), argv: [], stdin });
+  const result = await rotate({ repos: recordedRepos(), argv: DEPLOY, stdin });
   assert.equal(result.code, EXIT.rotated);
   assert.equal(read, false);
   assert.deepEqual(result.sets, []);
   assert.match(result.out, /Plan only; nothing was read from stdin or written/);
-  assert.match(result.out, new RegExp(`- ${DEMO} — production environment \\(updatedAt none\\)`));
+  assert.match(result.out, new RegExp(`- Wizard-Gang/Hexframe — production environment CLOUDFLARE_API_TOKEN \\(updatedAt ${DEPLOY_DATE}\\)`));
 });
 
 test('a failed write fails the run but the other targets are still written', async () => {
   const result = await rotate({ fail: ['set:Wizard-Gang/SharkTank:production'] });
   assert.equal(result.code, EXIT.writeFailed);
-  assert.match(result.err, /error: write failed for Wizard-Gang\/SharkTank — production environment: HTTP 403/);
+  assert.match(result.err, /error: write failed for Wizard-Gang\/SharkTank — production environment CLOUDFLARE_API_TOKEN: HTTP 403/);
   assert.match(result.err, /Rotation finished with 1 failure\(s\)/);
-  assert.equal(result.sets.length, 4);
+  assert.equal(result.sets.length, 3);
 });
 
 test('a failed or stale re-read fails the run', async () => {
   let result = await rotate({ fail: ['relist:Wizard-Gang/Hexframe:production'] });
   assert.equal(result.code, EXIT.writeFailed);
-  assert.match(result.err, /error: re-read failed for Wizard-Gang\/Hexframe — production environment: cannot read/);
+  assert.match(result.err, /error: re-read failed for Wizard-Gang\/Hexframe — production environment CLOUDFLARE_API_TOKEN: cannot read/);
   result = await rotate({ fail: ['stale:Wizard-Gang/WizardGang:production'] });
   assert.equal(result.code, EXIT.writeFailed);
-  assert.match(result.err, /re-read of Wizard-Gang\/WizardGang — production environment shows no new updatedAt \(before 2026-08-31T22:10:05Z, after 2026-08-31T22:10:05Z\)/);
+  assert.match(result.err, new RegExp(`re-read of Wizard-Gang/WizardGang — production environment CLOUDFLARE_API_TOKEN shows no new updatedAt \\(before ${DEPLOY_DATE}, after ${DEPLOY_DATE}\\)`));
 });
 
 test('missing, malformed or terminal input and an inactive token write nothing', async () => {
@@ -109,23 +146,23 @@ test('missing, malformed or terminal input and an inactive token write nothing',
     assert.equal(result.code, EXIT.failure);
     assert.deepEqual(result.sets, []);
   }
-  const skipped = await rotate({ argv: ['--apply', '--skip-verify'], fetchImpl: () => assert.fail('no Cloudflare call') });
+  const skipped = await rotate({ argv: [...DEPLOY, '--apply', '--skip-verify'], fetchImpl: () => assert.fail('no Cloudflare call') });
   assert.equal(skipped.code, EXIT.rotated);
 });
 
-test('a missing production environment, denied read or bad usage writes nothing', async () => {
+test('a missing mapped environment or a denied read writes nothing; an unmapped one does not block', async () => {
   const repos = convergedRepos();
   repos['Wizard-Gang/Hexframe'].environments = {};
   let result = await rotate({ repos });
   assert.equal(result.code, EXIT.failure);
   assert.match(result.err, /create the production environment in Wizard-Gang\/Hexframe first; nothing was written/);
   assert.deepEqual(result.sets, []);
+  const demoless = convergedRepos();
+  demoless[DEMO].environments = {};
+  result = await rotate({ repos: demoless });
+  assert.equal(result.code, EXIT.rotated, result.err);
+  assert.equal(result.sets.length, 3);
   result = await rotate({ fail: [`environments:${DEMO}`] });
   assert.equal(result.code, EXIT.readAccess);
   assert.deepEqual(result.sets, []);
-  for (const argv of [['--owner', 'Wizard-Gang'], ['--skip-verify'], ['--apply', VALUE]]) {
-    result = await rotate({ argv });
-    assert.equal(result.code, EXIT.usage, argv.join(' '));
-    assert.deepEqual(result.calls, []);
-  }
 });

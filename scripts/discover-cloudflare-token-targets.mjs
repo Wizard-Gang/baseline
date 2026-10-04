@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
-import { SECRET_NAME, createGh, discoverTokenTargets, requireGhAuth } from './cloudflare-token-targets.mjs';
+import { createGh, discoverRegistryTargets, loadAuthorities, requireGhAuth } from './cloudflare-token-targets.mjs';
 
-// Exit codes: 0 every declared target holds the secret with no drift, 1 drift, 2 usage, a missing gh or
-// missing GitHub credentials, 3 denied or failed read access, 4 an invalid committed authority.
+// Exit codes: 0 every registry target is present with no drift, 1 drift, 2 usage, a missing gh or missing GitHub
+// credentials, 3 denied or failed read access, 4 an invalid committed authority.
 export const EXIT = Object.freeze({ ready: 0, drift: 1, usage: 2, readAccess: 3, failure: 4 });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const USAGE = `Usage: npm run discover:cloudflare-token-targets
 
-Read-only. Lists the ${SECRET_NAME} targets declared in config/cloudflare.json (each Worker's repository and
-its production environment) with the secret's updatedAt, then reports drift: a missing production environment
-or secret, and any ${SECRET_NAME} at repository level or in another environment. Reads names and metadata only.`;
+Read-only. Lists every GitHub-environment secret and variable that config/secrets.json registers for the
+repositories in config/cloudflare.json, one line each:
+  <repository> <environment> <secret|variable> <name> <console credential or -> <updatedAt or missing>
+then reports drift: repository-level secrets or variables, another environment, a name outside the registry,
+a missing environment or registered entry, and a registered entry stored as the other kind (a variable held as a
+secret). Reads names and updatedAt only, never a value.`;
 
 export function runDiscoverTokenTargets({ argv = process.argv.slice(2), env = process.env, root = ROOT, gh = createGh({ env }),
   log = console.log, error = console.error } = {}) {
@@ -27,18 +29,17 @@ export function runDiscoverTokenTargets({ argv = process.argv.slice(2), env = pr
     return EXIT.usage;
   }
 
-  const desired = loadCloudflareDesiredState(root);
-  const invalid = validateCloudflareDesiredState(desired);
-  if (invalid.length) {
-    error('config/cloudflare.json is not a valid desired state; nothing was read:');
-    for (const entry of invalid) error(`- ${entry}`);
+  const authorities = loadAuthorities(root);
+  if (authorities.failures.length) {
+    error('The committed authorities are invalid; nothing was read:');
+    for (const entry of authorities.failures) error(`- ${entry}`);
     return EXIT.failure;
   }
 
   let found;
   try {
     requireGhAuth(gh);
-    found = discoverTokenTargets(desired, gh);
+    found = discoverRegistryTargets(authorities, gh);
   } catch (failure) {
     if (failure.code === 'GH_MISSING' || failure.code === 'GH_CREDENTIALS') {
       error(`GitHub credentials: ${failure.message}`);
@@ -48,8 +49,8 @@ export function runDiscoverTokenTargets({ argv = process.argv.slice(2), env = pr
     return EXIT.readAccess;
   }
 
-  for (const { worker, repository, environment, updatedAt } of found.targets) {
-    log(`${worker}\t${repository}\t${environment}\t${updatedAt ?? 'missing'}`);
+  for (const { repository, environment, kind, name, credential, updatedAt } of found.targets) {
+    log([repository, environment, kind, name, credential ?? '-', updatedAt ?? 'missing'].join('\t'));
   }
   if (!found.drift.length) return EXIT.ready;
   error(`Drift (${found.drift.length}):`);

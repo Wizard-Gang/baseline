@@ -5,7 +5,9 @@ import { block, keys } from './workflow-yaml.mjs';
 
 export const DEPLOY_WORKFLOW = '.github/workflows/deploy-worker.yml';
 export const DEPLOY_INPUTS = Object.freeze(['worker', 'tag', 'expected_sha']);
-export const DEPLOY_SECRETS = Object.freeze(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
+// config/secrets.json registers the token as a production environment secret and the account ID as a variable.
+export const DEPLOY_SECRETS = Object.freeze(['CLOUDFLARE_API_TOKEN']);
+export const DEPLOY_VARIABLES = Object.freeze(['CLOUDFLARE_ACCOUNT_ID']);
 // The only wrangler deploy shape allowed: the caller's locked wrangler with resource provisioning off,
 // so an unresolved binding fails instead of creating D1 wizardgang (or anything else) before Phase 3.
 export const WRANGLER_DEPLOY = 'npx --no-install wrangler deploy --experimental-provision=false --experimental-auto-create=false';
@@ -75,15 +77,20 @@ export function validateDeployWorkflow(source) {
   if (/^[ \t]*(?:-[ \t]+)?run:[ \t]*(?:[|>][^\s]|>)/m.test(source)) fail('run commands must be one line or a plain | block');
   if (runCommands(source).some((command) => command.includes('${{'))) fail('run commands must read inputs through env, never ${{ }}');
 
-  // Environment binding: only the deploy job sees secrets, only the two Cloudflare ones, from the caller's production environment.
+  // Environment binding: only the deploy job reads the caller's production environment: the token secret and the account ID variable.
   if (!/^ {4}environment:\n {6}name: production$/m.test(deploy)) fail('deploy must bind the caller\'s production environment');
   if (/^ {4}environment:/m.test(verify)) fail('verify must not bind an environment');
   if (!/^ {4}needs: verify$/m.test(deploy)) fail('deploy must need verify');
-  const secretNames = (text) => [...text.matchAll(/secrets\.([A-Za-z0-9_]+)/g)].map((match) => match[1]);
-  if (secretNames(verify).length) fail('verify must not read secrets');
-  if (secretNames(source).some((name) => !DEPLOY_SECRETS.includes(name)) || !sameList([...new Set(secretNames(deploy))], DEPLOY_SECRETS)) {
-    fail(`deploy may read only ${DEPLOY_SECRETS.join(' and ')}`);
+  const referenced = (text, context) => [...text.matchAll(new RegExp(`${context}\\.([A-Za-z0-9_]+)`, 'g'))].map((match) => match[1]);
+  if (referenced(verify, 'secrets').length) fail('verify must not read secrets');
+  if (referenced(verify, 'vars').length) fail('verify must not read variables');
+  if (referenced(source, 'secrets').some((name) => !DEPLOY_SECRETS.includes(name)) || !sameList([...new Set(referenced(deploy, 'secrets'))], DEPLOY_SECRETS)) {
+    fail(`deploy may read only the secret ${DEPLOY_SECRETS.join(' and ')}`);
   }
+  if (referenced(source, 'vars').some((name) => !DEPLOY_VARIABLES.includes(name)) || !sameList([...new Set(referenced(deploy, 'vars'))], DEPLOY_VARIABLES)) {
+    fail(`deploy must read ${DEPLOY_VARIABLES.join(' and ')} as vars.${DEPLOY_VARIABLES[0]} and no other variable`);
+  }
+  if (/secrets\.CLOUDFLARE_ACCOUNT_ID\b/.test(source)) fail('CLOUDFLARE_ACCOUNT_ID is a registry variable; read vars.CLOUDFLARE_ACCOUNT_ID, never secrets.CLOUDFLARE_ACCOUNT_ID');
 
   // Tag identity, source checks and conformance, in order, before the deploy job can start.
   if (!inOrder(verify, [

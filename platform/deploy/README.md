@@ -18,7 +18,7 @@ Only then does the `deploy` job start, bound to the caller's `production` enviro
 4. It confirms with `wrangler deployments status --json` that the version wrangler reported serves 100% of traffic, retrying for about a minute.
 5. It polls `https://<host>/version.json` until `app`, `version` and `commit` equal the label, the tag version and the tag commit. The default timeout is 5 minutes, and it fails on timeout. The host comes from the vendored `desired.mjs`, never from an input. A Cloudflare managed challenge to the runner counts as a failed attempt, not a pass.
 
-The deploy job reads only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and it fails before wrangler runs if either is empty. Neither job widens the read-only token. Actions are pinned by commit SHA, and inputs reach the shell only through `env`. Runs are serialized per Worker and never cancelled mid-deploy.
+The deploy job reads only the secret `CLOUDFLARE_API_TOKEN` and the variable `vars.CLOUDFLARE_ACCOUNT_ID`, as `config/secrets.json` registers them, and it fails before wrangler runs if either is empty. Neither job widens the read-only token. Actions are pinned by commit SHA, and inputs reach the shell only through `env`. Runs are serialized per Worker and never cancelled mid-deploy.
 
 ## Calling it
 
@@ -41,7 +41,7 @@ The caller needs these in place:
 - `platform/` vendored with its `vendor.lock.json`, and a conforming `wrangler.jsonc` at the root;
 - `.node-version` and an exact `packageManager` npm pin;
 - `wrangler` in its lockfile, plus `npm run check` (and optionally `npm run build`);
-- a `production` environment holding `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
+- a `production` environment holding the secret `CLOUDFLARE_API_TOKEN` and the variable `CLOUDFLARE_ACCOUNT_ID` (a variable, never a secret);
 - a Worker that serves the wg-edge `/version.json`.
 
 ## Checks

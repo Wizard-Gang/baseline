@@ -6,8 +6,10 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadCloudflareDesiredState } from '../scripts/cloudflare-desired-state.mjs';
 import { expectedCloudflareState } from '../scripts/cloudflare-drift.mjs';
+import { rotatableCredentials } from '../scripts/cloudflare-token-targets.mjs';
 import { normalizeLifecycle } from '../scripts/cloudflare-live-state.mjs';
 import { validateRepositoryAt } from '../scripts/repository-contract.mjs';
+import { loadSecretRegistry } from '../scripts/secret-registry.mjs';
 import { runVerifyCloudflare } from '../scripts/verify-cloudflare.mjs';
 import { ENV, fakeFetch, recordedResponses } from './fixtures/cloudflare-api.mjs';
 
@@ -35,10 +37,12 @@ const inventory = {
   ]),
   repositories: new Set(workers.map(([, w]) => w.repository)),
 };
-// Names the runbook introduces that are not Cloudflare resources: the keychain item, the shell's binding names and
-// response header, the session variable for the Secrets Store ID and the GitHub secrets deploy-worker.yml reads.
-const VOCABULARY = new Set(['wg-cloudflare-audit', 'content-security-policy', 'WG_DB', 'WG_R2', 'WG_APP', 'STORE_ID',
-  'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
+const registry = loadSecretRegistry(root);
+// Names the runbook introduces that are not Cloudflare resources: the shell's binding names and response header, the
+// session variable for the Secrets Store ID, and the registry's console credentials and GitHub-environment names.
+const VOCABULARY = new Set(['content-security-policy', 'WG_DB', 'WG_R2', 'WG_APP', 'STORE_ID',
+  ...[...registry.entries, ...registry.exceptions].flatMap(({ credential }) => (credential ? [credential] : [])),
+  ...registry.entries.filter(({ home }) => home === 'github-environment').map(({ name }) => name)]);
 const known = (name) => VOCABULARY.has(name) || Object.values(inventory).some((names) => names.has(name));
 const placeholder = (arg) => /^(?:<|"\$|\$)/.test(arg);
 
@@ -72,14 +76,23 @@ test('every npm script the runbook runs exists, including the owner-run Cloudfla
   for (const name of ['check', 'verify:cloudflare', 'discover:cloudflare-token-targets', 'rotate:cloudflare-token']) {
     assert.ok(used.has(name), `the runbook must use npm run ${name}`);
   }
-  assert.ok(runbook.includes('pbpaste | npm run rotate:cloudflare-token -- --apply'));
+  for (const credential of ['wg-cloudflare-deploy']) {
+    assert.ok(runbook.includes(`pbpaste | npm run rotate:cloudflare-token -- --credential ${credential} --apply`));
+  }
+  // Every rotation command names a console credential the registry lets it rotate.
+  const rotations = [...runbook.matchAll(/rotate:cloudflare-token(?: -- ([^`\n]*))?/g)].map((match) => match[1] ?? '');
+  assert.ok(rotations.length >= 3);
+  for (const args of rotations) {
+    const credential = /--credential (\S+)/.exec(args)?.[1];
+    assert.ok(credential && rotatableCredentials(registry).includes(credential), `rotate:cloudflare-token needs a rotatable --credential: ${args}`);
+  }
 });
 
 test('every step has a precondition, a command, a read-back and a rollback', () => {
   const steps = [...sections(), ...runbook.split('\n## ').filter((part) => part.startsWith('Deploy rollback'))
     .map((body) => ({ part: 'Deploy rollback', title: 'Deploy rollback', body }))];
   const count = (part) => steps.filter((step) => step.part.startsWith(part)).length;
-  assert.deepEqual([count('Phase 1'), count('Phase 3'), count('Deploy rollback'), count('Later retirements')], [5, 6, 1, 6]);
+  assert.deepEqual([count('Phase 1'), count('Phase 3'), count('Deploy rollback'), count('Later retirements')], [5, 6, 1, 7]);
   for (const { title, body } of steps) {
     const at = ['**Precondition:**', '**Command:**', '**Read-back:**', '**Rollback:**'].map((label) => body.indexOf(`- ${label}`));
     assert.ok(at.every((index, i) => index >= 0 && (i === 0 || index > at[i - 1])), `${title} must list its four parts in order`);
