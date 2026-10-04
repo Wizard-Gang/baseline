@@ -9,12 +9,10 @@ const worker = (host, aliases, durableObjects, crons, secrets = []) => Object.fr
   secrets: Object.freeze(secrets),
 });
 
-// Worker secret names: the checker refuses them as plain-text vars.
+// Worker secret names (the baseline secret registry's Worker secrets): the checker refuses them as plain-text vars.
 const DEMO_SECRETS = [
-  'CLOUDFLARE_API_TOKEN', 'DEMO_SESSION_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_DEMO_TOKEN',
-  'GITHUB_READ_TOKEN', 'GITHUB_REPORTING_WRITE_TOKEN', 'GITHUB_WEBHOOK_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
-  'IDENTITY_AUDIT_HMAC_SECRET', 'IDENTITY_SESSION_SECRET', 'MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET',
-  'MICROSOFT_TENANT_ID', 'SAML_IDP_CERT', 'WEBHOOK_DEMO_SECRET',
+  'CLOUDFLARE_BILLING_TOKEN', 'DEMO_WEBHOOK_SECRET', 'GITHUB_APP_PRIVATE_KEY', 'GITHUB_OAUTH_CLIENT_SECRET',
+  'GITHUB_WEBHOOK_SECRET', 'GOOGLE_OAUTH_CLIENT_SECRET', 'MICROSOFT_OAUTH_CLIENT_SECRET',
 ];
 
 export const DESIRED = Object.freeze({

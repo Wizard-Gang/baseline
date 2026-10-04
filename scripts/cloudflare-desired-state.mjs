@@ -38,7 +38,7 @@ function isCalendarDate(value) {
 }
 
 // Account IDs, binding IDs and secret values never belong in the committed desired state.
-function scanForCommittedValues(value, path, failures) {
+export function scanForCommittedValues(value, path, failures) {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => scanForCommittedValues(entry, `${path}[${index}]`, failures));
   } else if (isObject(value)) {

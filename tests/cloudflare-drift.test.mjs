@@ -28,7 +28,7 @@ test('the expected state is derived from config/cloudflare.json', () => {
   assert.deepEqual(expected.domains['www.wizardgang.ai'], { worker: 'wizardgang', enabled: true });
   assert.deepEqual(expected.durableObjects, ['demo:DemoCoordinator', 'sharktank:Room']);
   assert.deepEqual(expected.crons, ['demo: */5 * * * *']);
-  assert.equal(expected.secrets.length, 17);
+  assert.equal(expected.secrets.length, 7);
   assert.deepEqual(expected.secretsStoreSecrets, ['default_secrets_store:WG_OPS_TOKEN', 'default_secrets_store:WG_SESSION_KEY']);
   assert.deepEqual(expected.lifecycle.wizardgang, [
     'abort incomplete multipart uploads (all objects) after 1d',

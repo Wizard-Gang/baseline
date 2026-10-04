@@ -76,7 +76,7 @@ test('identity: name is the Worker label and WG_APP is the name', () => {
   failsWith('hexframe', (config) => { config.vars.WG_APP = 'demo'; }, /^vars\.WG_APP must equal the Worker name/);
   failsWith('hexframe', (config) => { delete config.vars.WG_APP; }, /^vars\.WG_APP must equal/);
   failsWith('hexframe', (config) => { config.vars.WG_OPS_TOKEN = 'plain'; }, /^vars\.WG_OPS_TOKEN is reserved/);
-  failsWith('demo', (config) => { config.vars.GITHUB_CLIENT_SECRET = 'plain'; }, /^vars\.GITHUB_CLIENT_SECRET is a secret/);
+  failsWith('demo', (config) => { config.vars.GITHUB_OAUTH_CLIENT_SECRET = 'plain'; }, /^vars\.GITHUB_OAUTH_CLIENT_SECRET is a secret/);
   failsWith('hexframe', (config) => { config.vars.ENVIRONMENT = 1; }, /^vars\.ENVIRONMENT must be a string/);
   assert.deepEqual(check('hexframe', { ...render('hexframe'), vars: { WG_APP: 'hexframe', ENVIRONMENT: 'production' } }), []);
 });
@@ -150,7 +150,7 @@ test('Durable Objects and crons are exactly the declared ones', () => {
 
 test('Secrets Store bindings only for WG_OPS_TOKEN and WG_SESSION_KEY', () => {
   const bind = (name) => ({ binding: name, store_id: STORE_ID, secret_name: name });
-  failsWith('demo', (config) => { config.secrets_store_secrets.push(bind('GITHUB_CLIENT_SECRET')); }, /binds "GITHUB_CLIENT_SECRET"; only WG_OPS_TOKEN and WG_SESSION_KEY/);
+  failsWith('demo', (config) => { config.secrets_store_secrets.push(bind('GITHUB_OAUTH_CLIENT_SECRET')); }, /binds "GITHUB_OAUTH_CLIENT_SECRET"; only WG_OPS_TOKEN and WG_SESSION_KEY/);
   failsWith('hexframe', (config) => { config.secrets_store_secrets.push(bind('WG_OPS_TOKEN')); }, /repeats WG_OPS_TOKEN/);
   failsWith('hexframe', (config) => { config.secrets_store_secrets[0].secret_name = 'OPS_TOKEN'; }, /secret_name must equal its binding/);
   failsWith('hexframe', (config) => { config.secrets_store_secrets[0].store_id = 'default_secrets_store'; }, /store_id is malformed/);

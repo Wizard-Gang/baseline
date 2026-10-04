@@ -40,12 +40,12 @@ test('the recorded 2026-10-03 account reports the expected drift', async () => {
   assert.ok(result.calls.every((call) => call.method === 'GET'));
   const lines = result.err.split('\n');
   assert.equal(lines[0], 'Cloudflare does not match config/cloudflare.json:');
-  assert.deepEqual(lines.filter((line) => !line.startsWith('- ')).slice(1), ['Missing (28):', 'Unexpected (38):', 'Mismatched (4):']);
+  assert.deepEqual(lines.filter((line) => !line.startsWith('- ')).slice(1), ['Missing (18):', 'Unexpected (38):', 'Mismatched (4):']);
   for (const entry of [
     // The target Workers and shared resources do not exist yet; the live Workers carry the old names.
     'Worker wizardgang', 'Worker demo', 'Worker sharktank', 'D1 database wizardgang', 'R2 bucket wizardgang',
     'Durable Object demo:DemoCoordinator', 'Durable Object sharktank:Room', 'cron demo: */5 * * * *',
-    'Worker secret demo:SAML_IDP_CERT', 'Secrets Store secret default_secrets_store:WG_OPS_TOKEN',
+    'Worker secret demo:CLOUDFLARE_BILLING_TOKEN', 'Secrets Store secret default_secrets_store:WG_OPS_TOKEN',
     'Secrets Store secret default_secrets_store:WG_SESSION_KEY', 'custom domain www.wizardgang.ai → wizardgang',
   ]) assert.ok(lines.includes(`- ${entry}`), `missing ${entry}`);
   for (const entry of [
