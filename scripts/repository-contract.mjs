@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
 import { validateMigrationsAt } from './migration-contract.mjs';
+import { validateSecretRegistryAt } from './secret-registry.mjs';
 import { DEPLOY_WORKFLOW, validateDeployWorkflow } from './deploy-workflow-contract.mjs';
 import { block, keys } from './workflow-yaml.mjs';
 
@@ -225,6 +226,7 @@ export function validateRepositoryAt(root) {
     'scripts/cloudflare-token-targets.mjs', ...Object.values(TOKEN_SCRIPTS).map((file) => `scripts/${file}`),
     'tests/cloudflare-token-discovery.test.mjs', 'tests/cloudflare-token-rotation.test.mjs', 'tests/fixtures/fake-gh.mjs',
     'docs/CLOUDFLARE-RUNBOOK.md', 'tests/cloudflare-runbook.test.mjs',
+    'config/secrets.json', 'scripts/secret-registry.mjs', 'tests/secret-registry.test.mjs',
   ];
   const failures = [];
   for (const path of required) {
@@ -249,6 +251,7 @@ export function validateRepositoryAt(root) {
   failures.push(...validateCloudflareDesiredState(loadCloudflareDesiredState(root))
     .map((failure) => `config/cloudflare.json: ${failure}`));
   failures.push(...validateMigrationsAt(root).map((failure) => `migrations: ${failure}`));
+  failures.push(...validateSecretRegistryAt(root).map((failure) => `config/secrets.json: ${failure}`));
   return [...failures, ...validateRepositoryContract({
     ci: read('.github/workflows/ci.yml'),
     release: read('.github/workflows/release.yml'),

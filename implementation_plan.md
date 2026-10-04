@@ -18,58 +18,46 @@ This queue normalizes every WizardGang secret. Baseline becomes the single regis
 - App keys are derived from `WG_SESSION_KEY` per purpose: `demo-session`, `identity-session` and `identity-audit` replace `DEMO_SESSION_SECRET`, `IDENTITY_SESSION_SECRET` and `IDENTITY_AUDIT_HMAC_SECRET`. The switch signs existing demo sessions out once.
 - Every secret is the same across WizardGang. The demo's separate deploy token is a temporary exception: it ends when the demo stops running its own D1 migrations (its Phase 4 move to `records`/`events`), and then `wg-cloudflare-demo` is revoked.
 
-**Naming rules for the registry.**
+**Naming rules for the registry.** `scripts/secret-registry.mjs` enforces them on `config/secrets.json` during `npm run check`.
 
 1. A secret holds only secret material. Client IDs, tenant IDs, account IDs, issuers, URLs and public certificates are plain variables: `vars` in `wrangler.jsonc`, or GitHub environment variables.
-2. Names are `<PROVIDER>_<PURPOSE>_<KIND>`, with KIND one of `TOKEN`, `CLIENT_SECRET`, `WEBHOOK_SECRET`, `PRIVATE_KEY` or `KEY`. Shared platform secrets use the `WG_` prefix. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` keep wrangler's names in GitHub.
-3. One credential, one home, one name. A provider credential's console name is `wg-<provider>-<purpose>`, and it maps to exactly one secret name.
+2. Names are `<PROVIDER>_<PURPOSE>_<KIND>`, with KIND one of `TOKEN`, `CLIENT_SECRET`, `WEBHOOK_SECRET`, `PRIVATE_KEY` or `KEY`. A webhook secret's KIND names its purpose, so `GITHUB_WEBHOOK_SECRET` needs no PURPOSE. Shared platform secrets use the `WG_` prefix. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` keep wrangler's names in GitHub.
+3. One credential, one home, one name. A provider credential's console name is `wg-<provider>-<purpose>`, and it maps to exactly one secret name. A keychain item is named by its console credential.
 4. GitHub Actions secrets live only in environments, never at repository level.
 5. Every declared secret is set, and every set secret is declared.
 
-**Target registry.**
+**Target registry.** `config/secrets.json` records it, and `npm run check` enforces it.
 
-- GitHub `production` environment of every config repository: secret `CLOUDFLARE_API_TOKEN` (`wg-cloudflare-deploy`, or `wg-cloudflare-demo` for the demo until its exception ends) and variable `CLOUDFLARE_ACCOUNT_ID`.
-- Secrets Store, bound by any Worker that needs them: `WG_OPS_TOKEN` and `WG_SESSION_KEY`, plus derived keys by label.
-- Demo Worker secrets: `CLOUDFLARE_BILLING_TOKEN` (`wg-cloudflare-billing`), `GITHUB_APP_PRIVATE_KEY` (`wg-github-app`), `GITHUB_OAUTH_CLIENT_SECRET` (`wg-github-oauth`), `GOOGLE_OAUTH_CLIENT_SECRET` (`wg-google-oauth`), `MICROSOFT_OAUTH_CLIENT_SECRET` (`wg-microsoft-oauth`), `GITHUB_WEBHOOK_SECRET` and `DEMO_WEBHOOK_SECRET`.
-- Demo Worker variables: `GITHUB_APP_ID`, `GITHUB_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_TENANT_ID`, `SAML_IDP_CERT`, `SAML_IDP_ISSUER` and `SAML_SSO_URL`.
-- The demo's `git-demo` environment: `GITHUB_APP_PRIVATE_KEY` and variable `GITHUB_APP_ID`.
-- Mac keychain: `wg-cloudflare-audit`.
+- The registry is the target, not live state. `config/cloudflare.json` already gives the demo Worker the seven normalized secret names, so `npm run verify:cloudflare` reports the old names as drift until the demo's own normalization and Phase 4 land.
+- `CLOUDFLARE_API_TOKEN` maps to `wg-cloudflare-deploy`. The registry's single exception maps the demo's `production` environment to `wg-cloudflare-demo` until the demo's Phase 4 D1 move, and then the exception is removed in the same change that revokes it.
+- `CLOUDFLARE_ACCOUNT_ID` is registered as a `production` environment variable. It is still set as a secret live until BASE-026 moves `deploy-worker.yml` to `vars` and the owner moves the value.
+- `wg-edge` is vendored without `config/`. Derived-key labels and GitHub App names it needs must be mirrored in `platform/` and tied to the registry by a test, as `WORKERS` and `desired.mjs` are tied to `config/cloudflare.json`.
 
 **Per-repo work after this queue.** The demo queues its own normalization task (renames, variables, derived keys, GitHub App, SAML configuration) after BASE-027 merges. SharkTank's ST-146 removes `OPS_*`. WizardGang and Hexframe need nothing beyond their Phase 4 migrations.
 
-### BASE-025 — [SEC] Add the WizardGang secret registry
-
-- Dependency: none.
-- Why: Secret names, kinds and homes are scattered across repositories and consoles, and one name currently holds three different credentials.
-- Scope: Add `config/secrets.json` and a closed validator run by `npm run check`. Each entry records the name, kind (`secret`, `variable` or `derived`), home (Worker, Secrets Store, GitHub environment or keychain), consumers, provider, console credential name and purpose. The validator enforces the naming rules. It requires every Worker's `secrets` in `config/cloudflare.json` to equal the registry's Worker secrets for that Worker, and the Secrets Store list to equal the registry's. Record the target registry above, including the demo's deploy-token exception and its end condition. Update the demo's `secrets` list in `config/cloudflare.json` to the normalized names.
-- Non-goals: No live secret change and no consumer change.
-- Acceptance: The registry holds every target entry. The validator rejects an unknown key, a misnamed secret, a public value stored as a secret, a duplicate home, a repository-level GitHub secret and a mismatch with `config/cloudflare.json`.
-- Validation: Pinned `npm ci`, focused registry tests, `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: This plan's preamble, `config/cloudflare.json` and the 2026-10-04 inventory.
-
 ### BASE-026 — [SEC] Drive discovery and rotation from the registry
 
-- Dependency: BASE-025 merged.
+- Dependency: none.
 - Why: The rotation tool writes one token to every production environment, which overwrites the demo's own deploy token, and discovery checks only `CLOUDFLARE_API_TOKEN`.
 - Scope: `discover:cloudflare-token-targets` and `rotate:cloudflare-token` read their targets from the registry. Rotation takes the console credential name (`--credential wg-cloudflare-deploy`) and writes only the environments mapped to it. Discovery reports every registry GitHub secret and variable in the config repositories, and any secret or variable outside the registry (repository level, another environment or an unknown name) as drift. `deploy-worker.yml` reads `CLOUDFLARE_ACCOUNT_ID` as an environment variable instead of a secret, and its contract follows.
 - Non-goals: No rotation run and no secret or variable change.
 - Acceptance: Stub-`gh` tests prove that rotation with each credential touches only its mapped targets, that the demo's token survives a `wg-cloudflare-deploy` rotation, and that discovery flags unregistered and repository-level entries. The deploy-workflow contract requires `vars.CLOUDFLARE_ACCOUNT_ID`.
-- Validation: As for BASE-025.
+- Validation: Pinned `npm ci`, focused tests, `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
 - Authorities: The registry, the existing token scripts and `deploy-worker.yml`.
 
 ### BASE-027 — [FEAT] Add key derivation and GitHub App tokens to wg-edge
 
-- Dependency: BASE-025 merged.
+- Dependency: none.
 - Why: Every Worker should derive its app keys from `WG_SESSION_KEY` and reach GitHub through the one App, rather than each holding its own keys and personal tokens.
-- Scope: `deriveKey(env, label)` derives HKDF-SHA256 key material from `WG_SESSION_KEY` for a label declared in the registry. `githubAppToken(env, { installationId, permissions })` signs an RS256 app JWT from `GITHUB_APP_ID` and a PKCS#8 `GITHUB_APP_PRIVATE_KEY`, exchanges it for an installation token and caches the token until shortly before it expires. Check that the private key fits a Secrets Store value; if it does not, it stays a Worker secret. Update `index.d.ts`, the README and the conformance allowlist for the new bindings.
+- Scope: `deriveKey(env, label)` derives HKDF-SHA256 key material from `WG_SESSION_KEY` for a label declared in the registry, through a mirrored label table that a baseline test ties to `config/secrets.json`. `githubAppToken(env, { installationId, permissions })` signs an RS256 app JWT from `GITHUB_APP_ID` and a PKCS#8 `GITHUB_APP_PRIVATE_KEY`, exchanges it for an installation token and caches the token until shortly before it expires. Check that the private key fits a Secrets Store value; if it does not, it stays a Worker secret. Update `index.d.ts`, the README and the conformance allowlist for the new bindings.
 - Non-goals: No consumer change and no App creation.
 - Acceptance: Tests prove that derivation is deterministic per label and separate across labels, that unknown labels fail closed, and that the JWT claims and signature verify. They also prove that the token exchange is cached and refreshed, and that a missing or malformed key fails closed without leaking it.
-- Validation: As for BASE-025.
+- Validation: As for BASE-026.
 - Authorities: The registry and `platform/wg-edge/`.
 
 ### BASE-028 — [DOCS] Write the secrets runbook
 
-- Dependency: BASE-025, BASE-026 and BASE-027 merged.
+- Dependency: BASE-026 and BASE-027 merged.
 - Why: The owner mints, sets, rotates and revokes every registry credential, and each step needs a precondition, command, read-back and rollback.
 - Scope: Add `docs/SECRETS-RUNBOOK.md`, linked from the README and the control map. Cover each registry credential:
   - the four Cloudflare tokens;
@@ -83,5 +71,5 @@ This queue normalizes every WizardGang secret. Baseline becomes the single regis
   Fix the Cloudflare runbook: scope step 1.5's grep to the Worker source, and make every command self-contained, because each terminal run starts a fresh shell. Extend the documentation tests to check both runbooks against the registry.
 - Non-goals: No provider change by an agent, and no token values or account ID.
 - Acceptance: Every registry credential has a mint, set, read-back, rotate and revoke step. The documentation tests keep names, commands and links current against the registry and `package.json`.
-- Validation: As for BASE-025.
+- Validation: As for BASE-026.
 - Authorities: The registry, the token scripts, `docs/CLOUDFLARE-RUNBOOK.md` and the 2026-10-04 inventory.
