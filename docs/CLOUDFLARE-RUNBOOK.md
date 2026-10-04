@@ -149,29 +149,29 @@ Run these in order. Step 3.1 runs before Phase 1. Steps 3.2 to 3.6 run after Pha
 
 ### 3.6 Mint the scoped deploy token and set it in every production environment
 
-- **Precondition:** `npm run discover:cloudflare-token-targets` prints one line for each repository in `config/cloudflare.json`. It exits 1, and its drift is only the demo's repository-level `CLOUDFLARE_API_TOKEN` and its empty `production` environment. `repos | while read -r r; do echo "== $r"; gh secret list --repo "$r" --env production; done` shows which environments already hold `CLOUDFLARE_ACCOUNT_ID`.
+- **Precondition:** `npm run discover:cloudflare-token-targets` prints a `production` `CLOUDFLARE_API_TOKEN` line for each repository in `config/cloudflare.json`, with the console credential `wg-cloudflare-deploy` for every repository but the demo, whose token is `wg-cloudflare-demo` by registry exception. `repos | while read -r r; do echo "== $r"; gh secret list --repo "$r" --env production; gh variable list --repo "$r" --env production; done` shows which environments already hold the `CLOUDFLARE_ACCOUNT_ID` variable.
 - **Command:** In the dashboard, under Account API Tokens, create a custom account-owned token with these minimum permissions:
   - Account: **Workers Scripts: Edit**. This covers uploading and deploying versions, static assets, Durable Object migrations, crons, Worker secrets, custom domains and `wrangler deployments status`.
   - Zone `wizardgang.ai` only: **Workers Routes: Edit** and **Zone: Read**, for the custom domains.
   - Nothing else: no D1, R2, KV or Secrets Store edit, and no DNS, rulesets, API tokens, members or billing. If a deploy fails on a missing permission, add only the permission it names, and record the addition here through a controlled change.
 
-  Copy the value, then run the plan, the rotation and the account ID writes:
+  Copy the value, then run the plan, the rotation and the account ID variable writes. Rotation writes only the environments the registry maps to `wg-cloudflare-deploy`, so the demo's own token is never overwritten; the demo's is rotated the same way with `--credential wg-cloudflare-demo`.
 
   ```sh
-  npm run rotate:cloudflare-token
-  pbpaste | npm run rotate:cloudflare-token -- --apply
+  npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy
+  pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply
   pbcopy </dev/null
-  repos | while read -r r; do printf %s "$CLOUDFLARE_ACCOUNT_ID" | gh secret set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
+  repos | while read -r r; do printf %s "$CLOUDFLARE_ACCOUNT_ID" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
   ```
 
-- **Read-back:** Rotation prints `Cloudflare reports the token as active.`, a new `updatedAt` for every target and `Rotation complete for all 4 target(s).`. `npm run discover:cloudflare-token-targets` then shows an `updatedAt` for all four. Its only drift is the demo's repository-level copy, which retirement R6 removes. The `gh secret list` loop shows `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in every `production` environment.
-- **Rollback:** GitHub secrets are write-only, so the old value cannot be restored. Keep superseded deploy tokens active until each repository has deployed with the new one, then revoke them in the dashboard. If the new token is wrong, fix its permissions, or roll it and pipe the new value through `rotate:cloudflare-token -- --apply` again. `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production` removes a wrong account ID write.
+- **Read-back:** Rotation prints `Cloudflare reports the token as active.`, a new `updatedAt` for every target and `Rotation of wg-cloudflare-deploy complete for all 3 target(s).`. `npm run discover:cloudflare-token-targets` then shows the new `updatedAt` on those three lines, and the demo's line keeps its own. The `gh` loop shows the `CLOUDFLARE_API_TOKEN` secret and the `CLOUDFLARE_ACCOUNT_ID` variable in every `production` environment; a leftover `CLOUDFLARE_ACCOUNT_ID` secret is retired by R7.
+- **Rollback:** GitHub secrets are write-only, so the old value cannot be restored. Keep superseded deploy tokens active until each repository has deployed with the new one, then revoke them in the dashboard. If the new token is wrong, fix its permissions, or roll it and pipe the new value through `rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply` again. `gh variable delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production` removes a wrong account ID write.
 
 ## Phase 4 hand-off
 
 Each consuming repository queues its own migration in its own plan. This runbook supplies the inputs and retires what the migrations leave behind. These are the owner's recorded defaults as of 2026-10-03; changing one is a controlled change to this runbook.
 
-- **Inputs:** each consumer commits the D1 `wizardgang` UUID (3.2) and the Secrets Store ID (3.5) in the `wrangler.jsonc` that `node platform/conformance/cli.mjs render --worker <label> --store-id <id>` starts. Its `production` environment holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (3.6).
+- **Inputs:** each consumer commits the D1 `wizardgang` UUID (3.2) and the Secrets Store ID (3.5) in the `wrangler.jsonc` that `node platform/conformance/cli.mjs render --worker <label> --store-id <id>` starts. Its `production` environment holds the secret `CLOUDFLARE_API_TOKEN` and the variable `CLOUDFLARE_ACCOUNT_ID` (3.6, R7).
 - **Renames:** deploy the new label first. Move the custom domain at a release boundary, confirm `/version.json`, then retire the old name (R3).
 - **SharkTank's `Room`:** it moves to `sharktank` by a `transferred_classes` migration, rehearsed first on a scratch Worker pair. If a live read at cut-over shows no stored state, a fresh class is an owner-approved fallback.
 - **`www.wizardgang.ai`:** it becomes a custom domain on `wizardgang`, and the zone rule retires (R4).
@@ -188,7 +188,7 @@ A Worker is rolled back by redeploying its previous release tag through [`deploy
 
 ## Later retirements
 
-Each retirement waits for its gate, which a Phase 4 task in the owning repository satisfies. Check the gate again immediately before the command.
+Each retirement waits for its gate, which a Phase 4 task in the owning repository satisfies; only R7's variable writes are ungated, and they run before the next `deploy-worker.yml` deploy. Check the gate again immediately before the command.
 
 ### R1 R2 bucket `wizardgang-demo-assets`, after SharkTank ST-148 is deployed
 
@@ -233,3 +233,10 @@ The pairs are `wizardgang-portfolio` → `wizardgang`, `wizardgang-architecture-
 - **Command:** `gh secret delete CLOUDFLARE_API_TOKEN --repo SouthernGentlemen/wizardgang-architecture-demo`, then `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo SouthernGentlemen/wizardgang-architecture-demo`
 - **Read-back:** `gh secret list --repo SouthernGentlemen/wizardgang-architecture-demo` shows neither name, and `npm run discover:cloudflare-token-targets` exits 0.
 - **Rollback:** `printf %s "$CLOUDFLARE_ACCOUNT_ID" | gh secret set CLOUDFLARE_ACCOUNT_ID --repo SouthernGentlemen/wizardgang-architecture-demo`, and the deploy token the same way from `pbpaste`.
+
+### R7 `CLOUDFLARE_ACCOUNT_ID` from secret to variable, before the next `deploy-worker.yml` deploy
+
+- **Precondition:** `npm run discover:cloudflare-token-targets` reports `stores CLOUDFLARE_ACCOUNT_ID as a secret` or `also holds CLOUDFLARE_ACCOUNT_ID as a secret` for the repository. `deploy-worker.yml` reads only `vars.CLOUDFLARE_ACCOUNT_ID`, so the variable must exist before any deploy through it. Delete the secret only once the repository's own workflows stop reading it: `git -C ../<checkout> fetch -q && git -C ../<checkout> grep -n "secrets.CLOUDFLARE_ACCOUNT_ID" origin/main -- .github/workflows` prints nothing. On 2026-10-04 the SharkTank, Hexframe and demo `deploy.yml` workflows still read it, and WizardGang's do not.
+- **Command:** Set the variable in every repository first; it sits safely beside the secret, because GitHub keeps secrets and variables apart: `repos | while read -r r; do printf %s "$CLOUDFLARE_ACCOUNT_ID" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done`. Then, for each repository that passes the workflow check, `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production`.
+- **Read-back:** `npm run discover:cloudflare-token-targets` shows an `updatedAt` on every `CLOUDFLARE_ACCOUNT_ID` variable line. It reports `also holds CLOUDFLARE_ACCOUNT_ID as a secret` only for repositories whose secret is still pending deletion, and nothing about it once the secret is gone. `gh variable list --repo <repository> --env production` lists `CLOUDFLARE_ACCOUNT_ID`.
+- **Rollback:** `printf %s "$CLOUDFLARE_ACCOUNT_ID" | gh secret set CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production` restores the secret for a workflow that still reads it. `gh variable delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production` removes a wrong variable.

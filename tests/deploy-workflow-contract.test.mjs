@@ -36,15 +36,27 @@ test('the workflow is call-only and can never run inside baseline', () => {
   rejects(edit('      tag:\n', '      ref:\n'), /inputs must be exactly worker, tag, expected_sha/);
 });
 
-test('only the deploy job binds the caller\'s production environment and reads its two Cloudflare secrets', () => {
+test('only the deploy job binds the caller\'s production environment and reads its Cloudflare token secret', () => {
   rejects(edit('      name: production\n', '      name: staging\n'), /production environment/);
   rejects(edit('    environment:\n      name: production\n      url: ${{ needs.verify.outputs.url }}\n', ''), /production environment/);
   rejects(edit('    needs: verify\n', ''), /deploy must need verify/);
   rejects(edit('    outputs:\n', '    environment:\n      name: production\n    outputs:\n'), /verify must not bind an environment/);
   rejects(edit('      - name: Install locked dependencies\n        run: npm ci\n      - name: Reproduce',
     '      - name: Install locked dependencies\n        env:\n          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n        run: npm ci\n      - name: Reproduce'), /verify must not read secrets/);
-  rejects(edit('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}', 'CLOUDFLARE_ACCOUNT_ID: ${{ secrets.GH_ADMIN_TOKEN }}'), /may read only CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID/);
+  rejects(edit('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}', 'CLOUDFLARE_API_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}'), /may read only the secret CLOUDFLARE_API_TOKEN/);
+  rejects(edit('      - name: Install locked dependencies\n        run: npm ci\n      - name: Reproduce',
+    '      - name: Install locked dependencies\n        env:\n          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}\n        run: npm ci\n      - name: Reproduce'), /verify must not read variables/);
+  rejects(edit('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}', 'CLOUDFLARE_ACCOUNT_ID: ${{ vars.PRODUCTION_HOST }}'), /no other variable/);
   rejects(`${workflow}        with:\n          secrets: inherit\n`, /never inherit caller secrets/);
+});
+
+test('the deploy reads CLOUDFLARE_ACCOUNT_ID only as the registry variable, never as a secret', () => {
+  assert.equal(workflow.match(/CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/g)?.length, 2);
+  assert.ok(!workflow.includes('secrets.CLOUDFLARE_ACCOUNT_ID'));
+  const asSecret = workflow.replaceAll('${{ vars.CLOUDFLARE_ACCOUNT_ID }}', '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');
+  rejects(asSecret, /never secrets\.CLOUDFLARE_ACCOUNT_ID/);
+  rejects(asSecret, /must read CLOUDFLARE_ACCOUNT_ID as vars\.CLOUDFLARE_ACCOUNT_ID/);
+  rejects(workflow.replace('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}', 'CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}'), /never secrets\.CLOUDFLARE_ACCOUNT_ID/);
 });
 
 test('actions stay SHA-pinned and the token stays read-only', () => {

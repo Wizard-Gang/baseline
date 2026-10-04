@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cloudflare-desired-state.mjs';
-import { GhError, SECRET_NAME, createGh, discoverTokenTargets, readSecretUpdatedAt, redactor, requireGhAuth } from './cloudflare-token-targets.mjs';
+import { GhError, configRepositories, createGh, credentialTargets, discoverRegistryTargets, loadAuthorities, readSecretUpdatedAt,
+  redactor, requireGhAuth, rotatableCredentials } from './cloudflare-token-targets.mjs';
 
 // Exit codes: 0 planned (no --apply) or every target rotated and re-read, 1 a write or its re-read failed,
-// 2 usage, a missing gh or GitHub credentials, or a missing or malformed value on stdin, 3 denied or failed
-// read access before any write, 4 an invalid authority, a missing production environment or a token Cloudflare rejects.
+// 2 usage (including a missing, unknown or non-rotatable --credential), a missing gh or GitHub credentials, or a
+// missing or malformed value on stdin, 3 denied or failed read access before any write, 4 an invalid authority,
+// a missing target environment or a token Cloudflare rejects.
 export const EXIT = Object.freeze({ rotated: 0, writeFailed: 1, usage: 2, readAccess: 3, failure: 4 });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,15 +15,32 @@ const CLOUDFLARE_API = 'https://api.cloudflare.com/client/v4';
 // Printable ASCII with no whitespace; one trailing newline from a pipe is removed first.
 const TOKEN_SHAPE = /^[\x21-\x7e]{20,512}$/;
 
-export const USAGE = `Usage: npm run rotate:cloudflare-token [-- --apply [--skip-verify]]
+export const USAGE = `Usage: npm run rotate:cloudflare-token -- --credential <console name> [--apply [--skip-verify]]
 
-Without --apply, prints the ${SECRET_NAME} targets and drift and changes nothing.
+The console credential (wg-cloudflare-deploy or wg-cloudflare-demo) selects the targets: only the GitHub
+environment secrets that config/secrets.json maps to it, including a registry exception. Without --apply, prints
+those targets and the registry drift and changes nothing.
 With --apply, reads the new token from stdin (piped, never a terminal or an argument), checks that Cloudflare
-reports it active, writes it to each declared repository's production environment with gh secret set over
-stdin, and re-reads the secret's updatedAt after each write. Repository-level and other-environment copies are
-reported as drift and never written. CLOUDFLARE_ACCOUNT_ID, when set, verifies an account-owned token.
+reports it active, writes it to each mapped environment with gh secret set over stdin, and re-reads the secret's
+updatedAt after each write. Every other secret, environment and repository-level copy is never written.
+CLOUDFLARE_ACCOUNT_ID, when set, verifies an account-owned token.
 
-  pbpaste | npm run rotate:cloudflare-token -- --apply`;
+  pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply`;
+
+/** { credential, apply, skipVerify } or { problem } for anything else; arguments are never echoed. */
+export function parseArguments(argv) {
+  const options = { credential: null, apply: false, skipVerify: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--apply') options.apply = true;
+    else if (arg === '--skip-verify') options.skipVerify = true;
+    else if (arg === '--credential' && options.credential === null && index + 1 < argv.length) options.credential = argv[++index];
+    else return { problem: 'unknown or repeated argument (not echoed); the token is read from stdin only' };
+  }
+  if (options.credential === null) return { problem: '--credential <console name> is required' };
+  if (options.skipVerify && !options.apply) return { problem: '--skip-verify needs --apply' };
+  return options;
+}
 
 async function readValue(stdin) {
   if (stdin.isTTY) throw new GhError('VALUE', 'pipe the token on stdin; a terminal would echo it');
@@ -50,26 +68,31 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
     log(USAGE);
     return EXIT.rotated;
   }
-  const unknown = argv.find((arg) => !['--apply', '--skip-verify'].includes(arg));
-  if (unknown || (argv.includes('--skip-verify') && !argv.includes('--apply'))) {
-    // Arguments are never echoed: a token pasted into argv must not reach the output.
-    error(`error: ${unknown ? 'unknown argument (not echoed); the token is read from stdin only' : '--skip-verify needs --apply'}\n${USAGE}`);
+  const options = parseArguments(argv);
+  if (options.problem) {
+    // A token pasted into argv must not reach the output.
+    error(`error: ${options.problem}\n${USAGE}`);
     return EXIT.usage;
   }
-  const apply = argv.includes('--apply');
+  const { apply, credential } = options;
 
-  const desired = loadCloudflareDesiredState(root);
-  const invalid = validateCloudflareDesiredState(desired);
-  if (invalid.length) {
-    error('config/cloudflare.json is not a valid desired state; nothing was read or written:');
-    for (const entry of invalid) error(`- ${entry}`);
+  const authorities = loadAuthorities(root);
+  if (authorities.failures.length) {
+    error('The committed authorities are invalid; nothing was read or written:');
+    for (const entry of authorities.failures) error(`- ${entry}`);
     return EXIT.failure;
+  }
+  const targets = credentialTargets(authorities.registry, configRepositories(authorities.desired), credential);
+  if (!targets?.length) {
+    error(`error: --credential must name a Cloudflare console credential with a GitHub environment target in config/secrets.json `
+      + `(not echoed); one of ${rotatableCredentials(authorities.registry).join(', ')}. Nothing was read or written.`);
+    return EXIT.usage;
   }
 
   let found;
   try {
     requireGhAuth(gh);
-    found = discoverTokenTargets(desired, gh);
+    found = discoverRegistryTargets(authorities, gh);
   } catch (failure) {
     if (failure.code === 'GH_MISSING' || failure.code === 'GH_CREDENTIALS') {
       error(`GitHub credentials: ${failure.message}`);
@@ -78,18 +101,20 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
     error(`GitHub read access failed before any write: ${failure.message}`);
     return EXIT.readAccess;
   }
+  const mapped = found.targets.filter((target) => targets.some((wanted) => wanted.repository === target.repository
+    && wanted.environment === target.environment && wanted.kind === target.kind && wanted.name === target.name));
 
-  log('Targets (production environment secrets declared in config/cloudflare.json):');
-  for (const { repository, environment, updatedAt } of found.targets) {
-    log(`- ${repository} — ${environment} environment (updatedAt ${updatedAt ?? 'none'})`);
+  log(`Targets for ${credential} (GitHub environment secrets config/secrets.json maps to it):`);
+  for (const { repository, environment, name, updatedAt } of mapped) {
+    log(`- ${repository} — ${environment} environment ${name} (updatedAt ${updatedAt ?? 'none'})`);
   }
   if (found.drift.length) {
-    error(`Drift, reported and never written (${found.drift.length}):`);
+    error(`Registry drift, reported and never written (${found.drift.length}):`);
     for (const entry of found.drift) error(`- ${entry}`);
   }
-  const missing = found.targets.filter((target) => !target.environmentExists);
+  const missing = mapped.filter((target) => !target.environmentExists);
   if (missing.length) {
-    error(`error: create the production environment in ${missing.map((target) => target.repository).join(', ')} first; nothing was written`);
+    error(`error: create ${missing.map((target) => `the ${target.environment} environment in ${target.repository}`).join(', ')} first; nothing was written`);
     return EXIT.failure;
   }
   if (!apply) {
@@ -118,9 +143,9 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
   }
 
   let failures = 0;
-  for (const { repository, environment, updatedAt: before } of found.targets) {
-    const where = `${repository} — ${environment} environment`;
-    const written = gh(['secret', 'set', SECRET_NAME, '--repo', repository, '--env', environment], { input: value });
+  for (const { repository, environment, name, updatedAt: before } of mapped) {
+    const where = `${repository} — ${environment} environment ${name}`;
+    const written = gh(['secret', 'set', name, '--repo', repository, '--env', environment], { input: value });
     if (written.status !== 0) {
       warn(`error: write failed for ${where}${written.stderr ? `: ${written.stderr.split('\n')[0]}` : ''}`);
       failures += 1;
@@ -128,7 +153,7 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
     }
     let after;
     try {
-      after = readSecretUpdatedAt(gh, repository, environment);
+      after = readSecretUpdatedAt(gh, name, repository, environment);
     } catch (failure) {
       warn(`error: re-read failed for ${where}: ${failure.message}`);
       failures += 1;
@@ -145,7 +170,7 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
     warn(`Rotation finished with ${failures} failure(s); correct access and re-run.`);
     return EXIT.writeFailed;
   }
-  say(`Rotation complete for all ${found.targets.length} target(s).`);
+  say(`Rotation of ${credential} complete for all ${mapped.length} target(s).`);
   return EXIT.rotated;
 }
 
