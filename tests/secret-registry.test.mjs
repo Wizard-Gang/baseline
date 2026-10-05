@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const committed = loadSecretRegistry(root);
 const cloudflare = loadCloudflareDesiredState(root);
 const scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
-const DEMO = 'SouthernGentlemen/wizardgang-architecture-demo';
+const DEMO = 'Wizard-Gang/wizardgang-architecture-demo';
 const find = (registry, name, home) => registry.entries.find((entry) => entry.name === name && entry.home === home);
 
 function failuresFor(mutate) {

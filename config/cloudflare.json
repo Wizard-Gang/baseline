@@ -22,7 +22,7 @@
       "secrets": []
     },
     "demo": {
-      "repository": "SouthernGentlemen/wizardgang-architecture-demo",
+      "repository": "Wizard-Gang/wizardgang-architecture-demo",
       "environment": "production",
       "host": "demo.wizardgang.ai",
       "aliases": [],

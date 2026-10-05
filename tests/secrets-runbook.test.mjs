@@ -22,7 +22,7 @@ const desired = loadCloudflareDesiredState(root);
 const scripts = JSON.parse(read('package.json')).scripts;
 const steps = sections(runbook);
 const recorded = recordedResponses('2026-10-03');
-const DEMO = 'SouthernGentlemen/wizardgang-architecture-demo';
+const DEMO = 'Wizard-Gang/wizardgang-architecture-demo';
 const DEMO_WORKERS = ['wizardgang-architecture-demo', 'demo'];
 // The demo Worker's secrets in the recorded 2026-10-03 inventory: the names the registry replaces.
 const recordedDemo = recorded['/workers/scripts/wizardgang-architecture-demo/secrets'].body.result.map((secret) => secret.name);

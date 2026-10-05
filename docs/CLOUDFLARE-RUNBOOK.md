@@ -166,7 +166,7 @@ Run these in order. Step 3.1 runs before Phase 1. Steps 3.2 to 3.6 run after Pha
   ```sh
   cd ~/Documents/GitHub/baseline && npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy
   cd ~/Documents/GitHub/baseline && pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply; pbcopy </dev/null
-  A="$(npx --yes wrangler@4.147.0 whoami --json | jq -r '.accounts[0].id')"; for r in Wizard-Gang/WizardGang SouthernGentlemen/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do printf %s "$A" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
+  A="$(npx --yes wrangler@4.147.0 whoami --json | jq -r '.accounts[0].id')"; for r in Wizard-Gang/WizardGang Wizard-Gang/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do printf %s "$A" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
   ```
 
 - **Read-back:** Rotation prints `Cloudflare reports the token as active.`, a new `updatedAt` for every target and `Rotation of wg-cloudflare-deploy complete for all 3 target(s).`. `npm run discover:cloudflare-token-targets` then shows the new `updatedAt` on those three lines, and the demo's line keeps its own. It also shows an `updatedAt` on every `CLOUDFLARE_ACCOUNT_ID` variable line; a leftover `CLOUDFLARE_ACCOUNT_ID` secret is retired by R7.
@@ -239,9 +239,9 @@ The pairs are `wizardgang-portfolio` → `wizardgang`, `wizardgang-architecture-
 
 ### R6 The demo's repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
 
-- **Precondition:** `gh secret list --repo SouthernGentlemen/wizardgang-architecture-demo` shows both names at repository level. `gh secret list --repo SouthernGentlemen/wizardgang-architecture-demo --env production` shows the environment's own `CLOUDFLARE_API_TOKEN`. The demo's only deploy job binds the `production` environment, which shadows both repository-level copies.
-- **Command:** `gh secret delete CLOUDFLARE_API_TOKEN --repo SouthernGentlemen/wizardgang-architecture-demo`, then `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo SouthernGentlemen/wizardgang-architecture-demo`
-- **Read-back:** `gh secret list --repo SouthernGentlemen/wizardgang-architecture-demo` shows neither name, and `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` reports no repository-level secret for the demo.
+- **Precondition:** `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo` shows both names at repository level. `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo --env production` shows the environment's own `CLOUDFLARE_API_TOKEN`. The demo's only deploy job binds the `production` environment, which shadows both repository-level copies.
+- **Command:** `gh secret delete CLOUDFLARE_API_TOKEN --repo Wizard-Gang/wizardgang-architecture-demo`, then `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo Wizard-Gang/wizardgang-architecture-demo`
+- **Read-back:** `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo` shows neither name, and `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` reports no repository-level secret for the demo.
 - **Rollback:** None is needed, because the registry allows no repository-level secret. A workflow that still needs a value reads it from its `production` environment: the token through `rotate:cloudflare-token -- --credential wg-cloudflare-demo --apply`, and the account ID as R7's variable.
 
 ### R7 `CLOUDFLARE_ACCOUNT_ID` from secret to variable, before the next `deploy-worker.yml` deploy
@@ -250,7 +250,7 @@ The pairs are `wizardgang-portfolio` → `wizardgang`, `wizardgang-architecture-
 - **Command:** Set the variable in every repository first; it sits safely beside the secret, because GitHub keeps secrets and variables apart. Then, for each repository that passes the workflow check, run `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production`.
 
   ```sh
-  A="$(npx --yes wrangler@4.147.0 whoami --json | jq -r '.accounts[0].id')"; for r in Wizard-Gang/WizardGang SouthernGentlemen/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do printf %s "$A" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
+  A="$(npx --yes wrangler@4.147.0 whoami --json | jq -r '.accounts[0].id')"; for r in Wizard-Gang/WizardGang Wizard-Gang/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do printf %s "$A" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
   ```
 
 - **Read-back:** `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` shows an `updatedAt` on every `CLOUDFLARE_ACCOUNT_ID` variable line. It reports `also holds CLOUDFLARE_ACCOUNT_ID as a secret` only for repositories whose secret is still pending deletion, and nothing about it once the secret is gone. `gh variable list --repo <repository> --env production` lists `CLOUDFLARE_ACCOUNT_ID`.

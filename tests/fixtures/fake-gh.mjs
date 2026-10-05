@@ -49,10 +49,10 @@ fail('fake gh: unsupported command ' + argv.join(' '));
 `;
 
 export const REPOSITORIES = Object.freeze([
-  'Wizard-Gang/WizardGang', 'SouthernGentlemen/wizardgang-architecture-demo', 'Wizard-Gang/SharkTank', 'Wizard-Gang/Hexframe',
+  'Wizard-Gang/WizardGang', 'Wizard-Gang/wizardgang-architecture-demo', 'Wizard-Gang/SharkTank', 'Wizard-Gang/Hexframe',
 ]);
 
-export const DEMO = 'SouthernGentlemen/wizardgang-architecture-demo';
+export const DEMO = 'Wizard-Gang/wizardgang-architecture-demo';
 export const DEPLOY_DATE = '2026-10-04T18:34:10Z';
 export const DEMO_DATE = '2026-10-04T18:45:02Z';
 const scope = (secrets = {}, variables = {}) => ({ secrets, variables });
