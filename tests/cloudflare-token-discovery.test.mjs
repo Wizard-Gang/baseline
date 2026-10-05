@@ -33,7 +33,7 @@ test('targets are the registry GitHub-environment entries, with the demo excepti
   const row = ({ repository, environment, kind, name, credential }) => `${repository} ${environment} ${kind} ${name} ${credential}`;
   assert.deepEqual(registryTargets(registry, repositories).map(row), [
     `${WG} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${WG} production variable CLOUDFLARE_ACCOUNT_ID null`,
-    `${DEMO} git-demo secret GITHUB_APP_PRIVATE_KEY wg-github-app`, `${DEMO} git-demo variable GITHUB_APP_ID null`,
+    `${DEMO} git-demo secret APP_PRIVATE_KEY wg-github-app`, `${DEMO} git-demo variable APP_ID null`,
     `${DEMO} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-demo`, `${DEMO} production variable CLOUDFLARE_ACCOUNT_ID null`,
     `${SHARK} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${SHARK} production variable CLOUDFLARE_ACCOUNT_ID null`,
     `${HEX} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${HEX} production variable CLOUDFLARE_ACCOUNT_ID null`,
@@ -54,7 +54,7 @@ test('a converged account lists every registry entry with no drift, using read-o
   const account = '2026-10-04T19:00:00Z';
   assert.deepEqual(result.out, [
     `${WG}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${WG}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
-    `${DEMO}\tgit-demo\tsecret\tGITHUB_APP_PRIVATE_KEY\twg-github-app\t2026-10-04T19:10:00Z`, `${DEMO}\tgit-demo\tvariable\tGITHUB_APP_ID\t-\t2026-10-04T19:10:00Z`,
+    `${DEMO}\tgit-demo\tsecret\tAPP_PRIVATE_KEY\twg-github-app\t2026-10-04T19:10:00Z`, `${DEMO}\tgit-demo\tvariable\tAPP_ID\t-\t2026-10-04T19:10:00Z`,
     `${DEMO}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-demo\t${DEMO_DATE}`, `${DEMO}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
     `${SHARK}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${SHARK}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
     `${HEX}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${HEX}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
@@ -75,7 +75,7 @@ test('repositories outside the config are never read, even when they hold the to
 test('the recorded 2026-10-04 state reports the account ID secrets and every unregistered entry as drift', () => {
   const result = discover({ repos: recordedRepos() });
   assert.equal(result.code, EXIT.drift);
-  assert.ok(result.out.includes(`${DEMO}\tgit-demo\tsecret\tGITHUB_APP_PRIVATE_KEY\twg-github-app\tmissing`));
+  assert.ok(result.out.includes(`${DEMO}\tgit-demo\tsecret\tAPP_PRIVATE_KEY\twg-github-app\tmissing`));
   assert.ok(result.out.includes(`${HEX}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\tmissing`));
   const wrongKind = (repository) => `- ${repository}: the production environment stores CLOUDFLARE_ACCOUNT_ID as a secret; the registry makes it a variable`;
   assert.deepEqual(result.err.split('\n'), [

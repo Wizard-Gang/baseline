@@ -63,7 +63,7 @@ export function convergedRepos() {
     production: scope({ CLOUDFLARE_API_TOKEN: DEPLOY_DATE }, { CLOUDFLARE_ACCOUNT_ID: '2026-10-04T19:00:00Z' }),
   } }]));
   repos[DEMO].environments.production.secrets.CLOUDFLARE_API_TOKEN = DEMO_DATE;
-  repos[DEMO].environments['git-demo'] = scope({ GITHUB_APP_PRIVATE_KEY: '2026-10-04T19:10:00Z' }, { GITHUB_APP_ID: '2026-10-04T19:10:00Z' });
+  repos[DEMO].environments['git-demo'] = scope({ APP_PRIVATE_KEY: '2026-10-04T19:10:00Z' }, { APP_ID: '2026-10-04T19:10:00Z' });
   return repos;
 }
 

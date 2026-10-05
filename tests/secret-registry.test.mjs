@@ -39,8 +39,8 @@ test('the committed registry passes and agrees with config/cloudflare.json', () 
 test('the committed registry records the 2026-10-04 target', () => {
   const names = (home, kind) => committed.entries.filter((entry) => entry.home === home && entry.kind === kind)
     .map((entry) => entry.name).sort();
-  assert.deepEqual(names('github-environment', 'secret'), ['CLOUDFLARE_API_TOKEN', 'GITHUB_APP_PRIVATE_KEY']);
-  assert.deepEqual(names('github-environment', 'variable'), ['CLOUDFLARE_ACCOUNT_ID', 'GITHUB_APP_ID']);
+  assert.deepEqual(names('github-environment', 'secret'), ['APP_PRIVATE_KEY', 'CLOUDFLARE_API_TOKEN']);
+  assert.deepEqual(names('github-environment', 'variable'), ['APP_ID', 'CLOUDFLARE_ACCOUNT_ID']);
   assert.deepEqual(names('secrets-store', 'secret'), ['WG_OPS_TOKEN', 'WG_SESSION_KEY']);
   assert.deepEqual(names('secrets-store', 'derived'), ['demo-session', 'identity-audit', 'identity-session']);
   assert.deepEqual(names('worker', 'secret'), cloudflare.workers.demo.secrets);
@@ -48,11 +48,12 @@ test('the committed registry records the 2026-10-04 target', () => {
     'MICROSOFT_OAUTH_CLIENT_ID', 'MICROSOFT_TENANT_ID', 'SAML_IDP_CERT', 'SAML_IDP_ISSUER', 'SAML_SSO_URL']);
   assert.deepEqual(names('keychain', 'secret'), ['wg-cloudflare-audit']);
   const credentials = committed.entries.filter((entry) => entry.credential).map((entry) => `${entry.name}=${entry.credential}`);
-  assert.deepEqual([...new Set(credentials)].sort(), ['CLOUDFLARE_API_TOKEN=wg-cloudflare-deploy',
+  assert.deepEqual([...new Set(credentials)].sort(), ['APP_PRIVATE_KEY=wg-github-app', 'CLOUDFLARE_API_TOKEN=wg-cloudflare-deploy',
     'CLOUDFLARE_BILLING_TOKEN=wg-cloudflare-billing', 'GITHUB_APP_PRIVATE_KEY=wg-github-app',
     'GITHUB_OAUTH_CLIENT_SECRET=wg-github-oauth', 'GOOGLE_OAUTH_CLIENT_SECRET=wg-google-oauth',
     'MICROSOFT_OAUTH_CLIENT_SECRET=wg-microsoft-oauth', 'wg-cloudflare-audit=wg-cloudflare-audit']);
-  assert.deepEqual(find(committed, 'GITHUB_APP_PRIVATE_KEY', 'github-environment').consumers, [`${DEMO}:git-demo`]);
+  assert.deepEqual(find(committed, 'APP_PRIVATE_KEY', 'github-environment').consumers, [`${DEMO}:git-demo`]);
+  assert.deepEqual(find(committed, 'APP_ID', 'github-environment').consumers, [`${DEMO}:git-demo`]);
   // The demo's own deploy token is the one exception, and it ends with the demo's Phase 4 D1 move.
   assert.equal(committed.exceptions.length, 1);
   const [exception] = committed.exceptions;
@@ -102,10 +103,22 @@ test('a public value stored as a secret is rejected', () => {
 test('a repository-level GitHub secret is rejected', () => {
   rejects((registry) => { find(registry, 'CLOUDFLARE_API_TOKEN', 'github-environment').consumers.push(DEMO); },
     `${DEMO} is a repository-level GitHub secret`);
-  rejects((registry) => { find(registry, 'GITHUB_APP_PRIVATE_KEY', 'github-environment').home = 'github-repository'; },
+  rejects((registry) => { find(registry, 'APP_PRIVATE_KEY', 'github-environment').home = 'github-repository'; },
     'repository-level GitHub secrets are not allowed');
-  rejects((registry) => { find(registry, 'GITHUB_APP_ID', 'github-environment').consumers = ['Wizard-Gang/baseline:production']; },
+  rejects((registry) => { find(registry, 'APP_ID', 'github-environment').consumers = ['Wizard-Gang/baseline:production']; },
     'Wizard-Gang/baseline is not a config/cloudflare.json repository');
+});
+
+test('a GitHub environment name never starts with GITHUB_, and a github name there drops the prefix', () => {
+  for (const [name, kind] of [['APP_PRIVATE_KEY', 'secret'], ['APP_ID', 'variable']]) {
+    rejects((registry) => { find(registry, name, 'github-environment').name = `GITHUB_${name}`; },
+      `GITHUB_${name} starts with GITHUB_, which GitHub reserves for Actions secrets and variables`);
+    assert.equal(find(committed, name, 'github-environment').kind, kind);
+  }
+  rejects((registry) => { find(registry, 'APP_PRIVATE_KEY', 'github-environment').name = 'APP_PRIVATE'; },
+    'APP_PRIVATE must be named <PURPOSE>_<KIND>');
+  rejects((registry) => { find(registry, 'CLOUDFLARE_API_TOKEN', 'github-environment').name = 'API_TOKEN'; },
+    'API_TOKEN must start with CLOUDFLARE_ for provider cloudflare');
 });
 
 test('a duplicate name in one home and a shared console credential are rejected', () => {
@@ -113,8 +126,10 @@ test('a duplicate name in one home and a shared console credential are rejected'
     'duplicate name GITHUB_WEBHOOK_SECRET in home worker');
   rejects((registry) => { find(registry, 'GITHUB_WEBHOOK_SECRET', 'worker').credential = 'wg-github-oauth'; },
     'console credential wg-github-oauth maps to both GITHUB_OAUTH_CLIENT_SECRET and GITHUB_WEBHOOK_SECRET');
-  rejects((registry) => { find(registry, 'GITHUB_APP_PRIVATE_KEY', 'github-environment').credential = 'wg-github-actions'; },
+  rejects((registry) => { find(registry, 'APP_PRIVATE_KEY', 'github-environment').credential = 'wg-github-actions'; },
     'GITHUB_APP_PRIVATE_KEY maps to more than one console credential');
+  rejects((registry) => { find(registry, 'APP_PRIVATE_KEY', 'github-environment').name = 'APP_SIGNING_KEY'; },
+    'console credential wg-github-app maps to both GITHUB_APP_SIGNING_KEY and GITHUB_APP_PRIVATE_KEY');
   rejects((registry) => { find(registry, 'CLOUDFLARE_BILLING_TOKEN', 'worker').credential = 'cloudflare-billing'; },
     'console credential must be named wg-cloudflare-<purpose>');
   rejects((registry) => { find(registry, 'GITHUB_APP_ID', 'worker').credential = 'wg-github-app'; }, 'only a secret has a console credential');

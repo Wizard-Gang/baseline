@@ -14,6 +14,12 @@ export const SECRET_KINDS = Object.freeze(['TOKEN', 'CLIENT_SECRET', 'WEBHOOK_SE
 export const DERIVED_SOURCE = 'WG_SESSION_KEY';
 // Wrangler's own names: kept as-is, and only in GitHub environments.
 export const WRANGLER_GITHUB_NAMES = Object.freeze(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
+// GitHub refuses Actions secret and variable names that start with GITHUB_, so a github name in a GitHub environment
+// drops its provider prefix: APP_PRIVATE_KEY in git-demo is the Worker's GITHUB_APP_PRIVATE_KEY.
+export const GITHUB_RESERVED_PREFIX = 'GITHUB_';
+const dropsProviderPrefix = (entry) => entry?.home === 'github-environment' && entry?.provider === 'github';
+/** The provider-prefixed form of an entry's name, which one console credential maps to in every home. */
+export const canonicalName = (entry) => (dropsProviderPrefix(entry) ? `${PROVIDERS.github}_${entry.name}` : entry.name);
 
 const TOP_LEVEL_KEYS = ['schemaVersion', 'entries', 'exceptions'];
 const ENTRY_KEYS = ['name', 'kind', 'home', 'consumers', 'provider', 'credential', 'purpose'];
@@ -40,11 +46,12 @@ function closed(failures, label, value, keys) {
   return true;
 }
 
-// <PROVIDER>_<PURPOSE>_<KIND>; a webhook secret's KIND already names its purpose.
+// <PROVIDER>_<PURPOSE>_<KIND>, or <PURPOSE>_<KIND> without a prefix; a webhook secret's KIND already names its purpose.
 function secretNameFailures(name, prefix) {
-  const match = new RegExp(`^${prefix}((?:_[A-Z0-9]+)*?)_(${SECRET_KINDS.join('|')})$`).exec(name);
+  const head = prefix ? `${prefix}((?:_[A-Z0-9]+)*?)` : '([A-Z0-9]+(?:_[A-Z0-9]+)*?)';
+  const match = new RegExp(`^${head}_(${SECRET_KINDS.join('|')})$`).exec(name);
   if (match && (match[1] || match[2] === 'WEBHOOK_SECRET')) return [];
-  return [`${name} must be named ${prefix}_<PURPOSE>_<KIND> with KIND one of ${SECRET_KINDS.join(', ')}`];
+  return [`${name} must be named ${prefix ? `${prefix}_` : ''}<PURPOSE>_<KIND> with KIND one of ${SECRET_KINDS.join(', ')}`];
 }
 
 function validateName(failures, label, entry) {
@@ -64,9 +71,12 @@ function validateName(failures, label, entry) {
     return;
   }
   if (!UPPER_NAME.test(name)) return failures.push(`${label}: ${name} must be an upper-case name`);
-  const prefix = PROVIDERS[provider];
-  if (!prefix) return;
-  if (!name.startsWith(`${prefix}_`)) failures.push(`${label}: ${name} must start with ${prefix}_ for provider ${provider}`);
+  if (home === 'github-environment' && name.startsWith(GITHUB_RESERVED_PREFIX)) {
+    failures.push(`${label}: ${name} starts with ${GITHUB_RESERVED_PREFIX}, which GitHub reserves for Actions secrets and variables`);
+  }
+  const prefix = dropsProviderPrefix(entry) ? '' : PROVIDERS[provider];
+  if (prefix === undefined) return;
+  if (prefix && !name.startsWith(`${prefix}_`)) failures.push(`${label}: ${name} must start with ${prefix}_ for provider ${provider}`);
   if (kind === 'variable') {
     if (!['worker', 'github-environment'].includes(home)) failures.push(`${label}: variable ${name} lives in a Worker or a GitHub environment`);
     if (SECRET_KINDS.some((suffix) => name.endsWith(`_${suffix}`))) failures.push(`${label}: ${name} names secret material and must be a secret`);
@@ -124,10 +134,11 @@ function validateEntry(failures, entry, index, names, credentials) {
   if (names.has(key)) failures.push(`${label}: duplicate name ${name} in home ${home}`);
   names.set(key, entry);
   if (typeof credential === 'string') {
-    if (credentials.has(credential) && credentials.get(credential) !== name) {
-      failures.push(`${label}: console credential ${credential} maps to both ${credentials.get(credential)} and ${name}`);
+    const canonical = canonicalName(entry);
+    if (credentials.has(credential) && credentials.get(credential) !== canonical) {
+      failures.push(`${label}: console credential ${credential} maps to both ${credentials.get(credential)} and ${canonical}`);
     }
-    credentials.set(credential, name);
+    credentials.set(credential, canonical);
   }
 }
 
@@ -162,10 +173,11 @@ export function validateSecretRegistry(registry) {
   registry.entries.forEach((entry, index) => {
     validateEntry(failures, entry, index, names, credentials);
     if (entry?.credential == null || typeof entry.name !== 'string') return;
-    if (byName.has(entry.name) && byName.get(entry.name) !== entry.credential) {
-      failures.push(`entries[${index}]: ${entry.name} maps to more than one console credential`);
+    const canonical = canonicalName(entry);
+    if (byName.has(canonical) && byName.get(canonical) !== entry.credential) {
+      failures.push(`entries[${index}]: ${canonical} maps to more than one console credential`);
     }
-    byName.set(entry.name, entry.credential);
+    byName.set(canonical, entry.credential);
   });
   if (!Array.isArray(registry.exceptions)) failures.push('secrets: exceptions must be a list');
   else registry.exceptions.forEach((exception, index) => validateException(failures, exception, index, names, credentials));

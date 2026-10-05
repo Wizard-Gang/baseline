@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { loadCloudflareDesiredState } from '../scripts/cloudflare-desired-state.mjs';
 import { configRepositories, registryTargets, rotatableCredentials } from '../scripts/cloudflare-token-targets.mjs';
 import { validateRepositoryAt } from '../scripts/repository-contract.mjs';
-import { loadSecretRegistry } from '../scripts/secret-registry.mjs';
+import { canonicalName, loadSecretRegistry } from '../scripts/secret-registry.mjs';
 import { DERIVED_KEYS } from '../platform/wg-edge/keys.mjs';
 import { GITHUB_APP } from '../platform/wg-edge/github.mjs';
 import { recordedResponses } from './fixtures/cloudflare-api.mjs';
@@ -99,15 +99,21 @@ test('every npm script exists, and both GitHub-environment tokens rotate through
 
 test('the GitHub App key is converted, set from stdin, fingerprinted and removed', () => {
   const section = steps.find(({ title }) => title === GITHUB_APP.credential).body;
-  const [environment] = registry.entries.filter((entry) => entry.name === GITHUB_APP.privateKey && entry.home === 'github-environment')
-    .flatMap((entry) => entry.consumers);
-  assert.equal(environment, `${DEMO}:git-demo`);
-  for (const phrase of ['openssl pkcs8 -topk8 -nocrypt', `secret put ${GITHUB_APP.privateKey} --name "$W" < `,
-    `gh secret set ${GITHUB_APP.privateKey} --repo ${DEMO} --env git-demo < `, `gh variable set ${GITHUB_APP.id} --repo ${DEMO} --env git-demo`,
+  const actions = registry.entries.filter((entry) => entry.home === 'github-environment' && entry.consumers.includes(`${DEMO}:git-demo`));
+  const actionsName = (kind) => actions.find((entry) => entry.kind === kind).name;
+  assert.deepEqual(actions.map(canonicalName).sort(), [GITHUB_APP.id, GITHUB_APP.privateKey]);
+  const create = `gh api -X PUT repos/${DEMO}/environments/git-demo --silent && `;
+  for (const phrase of ['openssl pkcs8 -topk8 -nocrypt', `secret put ${GITHUB_APP.privateKey} --name "$W" < `, create,
+    `gh secret set ${actionsName('secret')} --repo ${DEMO} --env git-demo < `, `gh variable set ${actionsName('variable')} --repo ${DEMO} --env git-demo`,
     'openssl rsa -in "$TMPDIR/wg-github-app.pkcs8.pem" -pubout -outform DER 2>/dev/null | openssl sha256 -binary | openssl base64',
     'rm -f ~/Downloads/wg-github-app.*.private-key.pem "$TMPDIR/wg-github-app.pkcs8.pem"', 'Generate a second private key']) {
     assert.ok(section.includes(phrase), `the App section must include ${phrase}`);
   }
+  for (const set of ['gh variable set', 'gh secret set']) {
+    assert.ok(section.indexOf(create) < section.indexOf(set), `the App section creates git-demo before ${set}`);
+  }
+  assert.doesNotMatch(section, /--env git-demo[^\n]*GITHUB_|(?:secret|variable) (?:set|delete) GITHUB_[A-Z_]+ --repo/,
+    'GitHub refuses GITHUB_ names in Actions');
   assert.match(steps.find(({ title }) => title === 'wg-microsoft-oauth').body, /expiry/);
 });
 
