@@ -157,8 +157,9 @@ Run these in order. Step 3.1 runs before Phase 1. Steps 3.2 to 3.6 run after Pha
 - **Precondition:** `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` prints a `production` `CLOUDFLARE_API_TOKEN` line for each repository in `config/cloudflare.json`, with the console credential `wg-cloudflare-deploy` for every repository but the demo, whose token is `wg-cloudflare-demo` by registry exception, and a `CLOUDFLARE_ACCOUNT_ID` variable line for each.
 - **Command:** In the dashboard, under Account API Tokens, create the custom account-owned token `wg-cloudflare-deploy` with these minimum permissions:
   - Account: **Workers Scripts: Edit**. This covers uploading and deploying versions, static assets, Durable Object migrations, crons, Worker secrets, custom domains and `wrangler deployments status`.
+  - Account: **Secrets Store: Edit**. Cloudflare treats binding a Secrets Store secret to a Worker as a write against the secret, so a token with only Read fails to deploy the `WG_OPS_TOKEN` and `WG_SESSION_KEY` bindings.
   - Zone `wizardgang.ai` only: **Workers Routes: Edit** and **Zone: Read**, for the custom domains.
-  - Nothing else: no D1, R2, KV or Secrets Store edit, and no DNS, rulesets, API tokens, members or billing. If a deploy fails on a missing permission, add only the permission it names, and record the addition here through a controlled change.
+  - Nothing else: no D1, R2 or KV edit, and no DNS, rulesets, API tokens, members or billing. If a deploy fails on a missing permission, add only the permission it names, and record the addition here through a controlled change.
 
   Copy the value, then run the plan, the rotation and the account ID variable writes. Rotation writes only the environments the registry maps to `wg-cloudflare-deploy`, so the demo's own token is never overwritten; the demo's is rotated the same way with `--credential wg-cloudflare-demo`.
 

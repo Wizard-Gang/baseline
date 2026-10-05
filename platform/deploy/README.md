@@ -22,7 +22,7 @@ The deploy job reads only the secret `CLOUDFLARE_API_TOKEN` and the variable `va
 
 ## Calling it
 
-A consumer calls the workflow from its own release path, after its Release has published the annotated tag. Pin the workflow to a merged baseline commit. Pass the tag and its commit. Do not pass secrets and never use `secrets: inherit`. The workflow declares no secrets, so the job reads the two Cloudflare secrets from the caller's `production` environment, never from repository-level secrets.
+A consumer calls the workflow from its own release path, after its Release has published the annotated tag. Pin the workflow to a merged baseline commit. Pass the tag and its commit, and pass `secrets: inherit`. A called workflow sees only the secrets its caller passes: binding the caller's `production` environment inside the `deploy` job does not expose that environment's secrets on its own, so without `inherit` the job reads an empty `CLOUDFLARE_API_TOKEN` and fails before wrangler runs. Variables need no passing. GitHub allows `inherit` only within one organization, so the caller must be a `Wizard-Gang` repository. The workflow still declares no secrets, the `verify` job reads none, and the `deploy` job reads only `CLOUDFLARE_API_TOKEN`, which the registry keeps in the caller's `production` environment, never at repository level.
 
 ```yaml
 jobs:
@@ -30,6 +30,7 @@ jobs:
     permissions:
       contents: read
     uses: Wizard-Gang/baseline/.github/workflows/deploy-worker.yml@<merged baseline commit>
+    secrets: inherit
     with:
       worker: hexframe
       tag: ${{ github.ref_name }}
@@ -41,7 +42,7 @@ The caller needs these in place:
 - `platform/` vendored with its `vendor.lock.json`, and a conforming `wrangler.jsonc` at the root;
 - `.node-version` and an exact `packageManager` npm pin;
 - `wrangler` in its lockfile, plus `npm run check` (and optionally `npm run build`);
-- a `production` environment holding the secret `CLOUDFLARE_API_TOKEN` and the variable `CLOUDFLARE_ACCOUNT_ID` (a variable, never a secret);
+- a `production` environment holding the secret `CLOUDFLARE_API_TOKEN` and the variable `CLOUDFLARE_ACCOUNT_ID` (a variable, never a secret), and a token that may bind Secrets Store secrets;
 - a Worker that serves the wg-edge `/version.json`.
 
 ## Checks

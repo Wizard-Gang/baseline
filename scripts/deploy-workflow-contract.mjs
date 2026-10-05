@@ -52,7 +52,8 @@ export function validateDeployWorkflow(source) {
     const input = block(inputs ?? '', name, 6) ?? '';
     if (!/^ {8}required: true$/m.test(input) || !/^ {8}type: string$/m.test(input)) fail(`input ${name} must be a required string`);
   }
-  if (/secrets:\s*inherit/.test(source)) fail('must never inherit caller secrets');
+  // Consumers call it with secrets: inherit; it must never pass those secrets on to another workflow.
+  if (/secrets:\s*inherit/.test(source)) fail('must never pass secrets on to another workflow');
 
   // Least privilege: a read-only token everywhere, serialized per Worker and never cancelled mid-deploy.
   if (block(source, 'permissions')?.trim() !== 'contents: read') fail('default token must be contents: read');
