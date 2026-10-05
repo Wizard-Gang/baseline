@@ -47,7 +47,14 @@ test('only the deploy job binds the caller\'s production environment and reads i
   rejects(edit('      - name: Install locked dependencies\n        run: npm ci\n      - name: Reproduce',
     '      - name: Install locked dependencies\n        env:\n          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}\n        run: npm ci\n      - name: Reproduce'), /verify must not read variables/);
   rejects(edit('CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}', 'CLOUDFLARE_ACCOUNT_ID: ${{ vars.PRODUCTION_HOST }}'), /no other variable/);
-  rejects(`${workflow}        with:\n          secrets: inherit\n`, /never inherit caller secrets/);
+  rejects(`${workflow}        with:\n          secrets: inherit\n`, /never pass secrets on to another workflow/);
+});
+
+test('the documented consumer call passes secrets: inherit and pins a commit', () => {
+  const example = /```yaml\n([\s\S]*?)```/.exec(read('platform/deploy/README.md'))?.[1] ?? '';
+  assert.match(example, /^    uses: Wizard-Gang\/baseline\/\.github\/workflows\/deploy-worker\.yml@<merged baseline commit>$/m);
+  assert.match(example, /^    secrets: inherit$/m);
+  assert.match(example, /^      expected_sha: /m);
 });
 
 test('the deploy reads CLOUDFLARE_ACCOUNT_ID only as the registry variable, never as a secret', () => {
