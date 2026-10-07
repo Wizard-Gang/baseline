@@ -11,6 +11,8 @@ export const DEPLOY_VARIABLES = Object.freeze(['CLOUDFLARE_ACCOUNT_ID']);
 // The only wrangler deploy shape allowed: the caller's locked wrangler with resource provisioning off,
 // so an unresolved binding fails instead of creating D1 wizardgang (or anything else) before Phase 3.
 export const WRANGLER_DEPLOY = 'npx --no-install wrangler deploy --experimental-provision=false --experimental-auto-create=false';
+// The account ID is never committed, so the deploy hands it to the Worker as a plain-text var.
+export const ACCOUNT_ID_VAR = '--var "CLOUDFLARE_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID"';
 
 const sameList = (actual, expected) => actual.length === expected.length && expected.every((entry) => actual.includes(entry));
 
@@ -109,6 +111,7 @@ export function validateDeployWorkflow(source) {
   const deployCommands = runCommands(deploy).join('\n');
   const deploys = runCommands(source).flatMap((command) => command.split('\n')).filter((line) => /wrangler\s+deploy\b/.test(line));
   if (deploys.length !== 1 || !deploys[0].includes(WRANGLER_DEPLOY)) fail(`the only wrangler deploy must be: ${WRANGLER_DEPLOY}`);
+  if (deploys.length === 1 && !deploys[0].includes(ACCOUNT_ID_VAR)) fail(`the wrangler deploy must pass ${ACCOUNT_ID_VAR}`);
   if (/wrangler\s+(?:d1|r2|kv|queues|secret|secrets-store|versions|rollback|delete|triggers)\b/.test(source)) {
     fail('must not run any other mutating wrangler command');
   }

@@ -134,6 +134,7 @@ jobs:
           # Provisioning off: an unresolved binding fails the deploy instead of creating D1 wizardgang or any other resource.
           WRANGLER_OUTPUT_FILE_PATH="$RUNNER_TEMP/wrangler-deploy.ndjson" npx --no-install wrangler deploy \
             --experimental-provision=false --experimental-auto-create=false \
+            --var "CLOUDFLARE_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID" \
             --tag "$RELEASE_TAG" --message "$RELEASE_TAG $EXPECTED_SHA"
       - name: Confirm the new version serves 100% of traffic
         env:

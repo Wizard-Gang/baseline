@@ -80,6 +80,7 @@ test('identity: name is the Worker label and WG_APP is the name', () => {
   // A registry Worker secret is refused as a var on every Worker, not only on the Workers that consume it.
   failsWith('hexframe', (config) => { config.vars.GITHUB_APP_PRIVATE_KEY = 'plain'; }, /^vars\.GITHUB_APP_PRIVATE_KEY is a secret/);
   failsWith('wizardgang', (config) => { config.vars.CLOUDFLARE_BILLING_TOKEN = 'plain'; }, /^vars\.CLOUDFLARE_BILLING_TOKEN is a secret/);
+  failsWith('demo', (config) => { config.vars.CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'; }, /^vars\.CLOUDFLARE_ACCOUNT_ID is never committed/);
   failsWith('demo', (config) => { config.secrets_store_secrets.push({ binding: 'GITHUB_APP_PRIVATE_KEY', store_id: STORE_ID, secret_name: 'GITHUB_APP_PRIVATE_KEY' }); }, /binds "GITHUB_APP_PRIVATE_KEY"; only WG_OPS_TOKEN and WG_SESSION_KEY/);
   failsWith('hexframe', (config) => { config.vars.ENVIRONMENT = 1; }, /^vars\.ENVIRONMENT must be a string/);
   assert.deepEqual(check('hexframe', { ...render('hexframe'), vars: { WG_APP: 'hexframe', ENVIRONMENT: 'production' } }), []);

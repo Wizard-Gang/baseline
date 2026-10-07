@@ -57,6 +57,7 @@ function checkVars(failures, vars, name, secrets) {
     if (typeof value !== 'string') failures.push(`vars.${key} must be a string`);
     if (key !== 'WG_APP' && key.startsWith('WG_')) failures.push(`vars.${key} is reserved for platform bindings`);
     if (secrets.includes(key)) failures.push(`vars.${key} is a secret and must never be a plain-text var`);
+    if (key === 'CLOUDFLARE_ACCOUNT_ID') failures.push('vars.CLOUDFLARE_ACCOUNT_ID is never committed; deploy-worker.yml passes it at deploy time');
   }
 }
 
