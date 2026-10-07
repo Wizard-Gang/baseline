@@ -5,13 +5,13 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createGh } from '../scripts/cloudflare-token-targets.mjs';
 import { EXIT, parseArguments, runRotateCloudflareToken } from '../scripts/rotate-cloudflare-token.mjs';
-import { DEMO, DEMO_DATE, DEPLOY_DATE, REPOSITORIES, convergedRepos, fakeGh, recordedRepos } from './fixtures/fake-gh.mjs';
+import { ACCOUNT_ID, DEMO, DEPLOY_DATE, REPOSITORIES, convergedRepos, fakeGh, recordedRepos } from './fixtures/fake-gh.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VALUE = 'cf-rotation-value-must-never-print-0123';
-const ACCOUNT = 'e'.repeat(32);
+const ACCOUNT = 'f'.repeat(32);
 const DEPLOY = ['--credential', 'wg-cloudflare-deploy'];
-const DEPLOYED = REPOSITORIES.filter((repository) => repository !== DEMO);
+const DEPLOYED = [...REPOSITORIES];
 
 function cloudflare(status = 'active', seen = []) {
   return async (url, init) => {
@@ -20,8 +20,8 @@ function cloudflare(status = 'active', seen = []) {
   };
 }
 
-async function rotate({ repos = convergedRepos(), fail = [], argv = [...DEPLOY, '--apply'], input = `${VALUE}\n`, stdin, fetchImpl = cloudflare(), env = {} } = {}) {
-  const gh = fakeGh({ repos, fail });
+async function rotate({ repos = convergedRepos(), fail = [], variableValues = {}, argv = [...DEPLOY, '--apply'], input = `${VALUE}\n`, stdin, fetchImpl = cloudflare(), env = {} } = {}) {
+  const gh = fakeGh({ repos, fail, variableValues });
   const out = [];
   const err = [];
   try {
@@ -42,7 +42,7 @@ async function rotate({ repos = convergedRepos(), fail = [], argv = [...DEPLOY, 
 
 const tokenAt = (state, repository, environment = 'production') => state.repos[repository].environments[environment]?.secrets.CLOUDFLARE_API_TOKEN;
 
-test('wg-cloudflare-deploy writes only its mapped environments over stdin, re-reads them and leaves the demo token', async () => {
+test('wg-cloudflare-deploy writes all four production environments over stdin and re-reads them', async () => {
   const seen = [];
   const result = await rotate({ fetchImpl: cloudflare('active', seen), env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT } });
   assert.equal(result.code, EXIT.rotated, result.err);
@@ -55,9 +55,9 @@ test('wg-cloudflare-deploy writes only its mapped environments over stdin, re-re
     assert.deepEqual(result.calls[at + 1].argv, ['secret', 'list', '--repo', repository, '--env', 'production', '--json', 'name,updatedAt']);
   }
   assert.match(result.out, /^Targets for wg-cloudflare-deploy /);
-  assert.ok(!result.out.includes(`- ${DEMO}`), 'the demo is not a wg-cloudflare-deploy target');
-  assert.match(result.out, /Rotation of wg-cloudflare-deploy complete for all 3 target\(s\)\.$/);
-  assert.equal(tokenAt(result.state, DEMO), DEMO_DATE, 'the demo token survives');
+  assert.match(result.out, /Rotation of wg-cloudflare-deploy complete for all 4 target\(s\)\.$/);
+  assert.notEqual(tokenAt(result.state, DEMO), DEPLOY_DATE, 'the demo takes the deploy token');
+  assert.ok(!result.calls.some((call) => call.argv[0] === 'variable' && call.argv[1] === 'get'), 'the shell account ID wins');
   assert.deepEqual(result.state.repos[DEMO].environments['git-demo'], convergedRepos()[DEMO].environments['git-demo']);
   assert.equal(seen.length, 1);
   assert.equal(seen[0].url, `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/tokens/verify`);
@@ -65,18 +65,35 @@ test('wg-cloudflare-deploy writes only its mapped environments over stdin, re-re
   assert.ok(!result.out.includes(ACCOUNT) && !result.err.includes(ACCOUNT));
 });
 
-test('wg-cloudflare-demo writes only the demo production environment, through the registry exception', async () => {
-  const result = await rotate({ argv: ['--credential', 'wg-cloudflare-demo', '--apply'] });
+test('without CLOUDFLARE_ACCOUNT_ID, the targets\' account ID variable verifies the account-owned token', async () => {
+  const seen = [];
+  const result = await rotate({ fetchImpl: cloudflare('active', seen) });
   assert.equal(result.code, EXIT.rotated, result.err);
-  assert.deepEqual(result.sets.map((call) => call.argv), [['secret', 'set', 'CLOUDFLARE_API_TOKEN', '--repo', DEMO, '--env', 'production']]);
-  assert.notEqual(tokenAt(result.state, DEMO), DEMO_DATE);
-  for (const repository of DEPLOYED) assert.equal(tokenAt(result.state, repository), DEPLOY_DATE, `${repository} keeps the deploy token`);
-  assert.match(result.out, /Rotation of wg-cloudflare-demo complete for all 1 target\(s\)\.$/);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/tokens/verify`);
+  assert.deepEqual(result.calls.filter((call) => call.argv[1] === 'get').map((call) => call.argv), DEPLOYED.map((repository) =>
+    ['variable', 'get', 'CLOUDFLARE_ACCOUNT_ID', '--repo', repository, '--env', 'production']));
+  assert.ok(!result.out.includes(ACCOUNT_ID) && !result.err.includes(ACCOUNT_ID));
+});
+
+test('disagreeing or absent account ID variables refuse before stdin is read', async () => {
+  for (const [options, problem] of [
+    [{ variableValues: { 'Wizard-Gang/Hexframe:production:CLOUDFLARE_ACCOUNT_ID': ACCOUNT } }, /variables disagree/],
+    [{ repos: recordedRepos() }, /no target holds a CLOUDFLARE_ACCOUNT_ID variable; set CLOUDFLARE_ACCOUNT_ID in the shell/],
+  ]) {
+    let read = false;
+    const stdin = Readable.from((function* () { read = true; yield VALUE; })());
+    const result = await rotate({ ...options, stdin, fetchImpl: () => assert.fail('no Cloudflare call') });
+    assert.equal(result.code, EXIT.failure);
+    assert.match(result.err, problem);
+    assert.equal(read, false);
+    assert.deepEqual(result.sets, []);
+  }
 });
 
 test('recorded drift is reported and never written; only the mapped token secret changes', async () => {
   const before = recordedRepos();
-  const result = await rotate({ repos: before });
+  const result = await rotate({ repos: before, env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT } });
   assert.equal(result.code, EXIT.rotated, result.err);
   assert.match(result.err, /^Registry drift, reported and never written \(9\):/);
   assert.match(result.err, /repository-level secret GIT_DEMO_PR_TOKEN is outside the registry/);
@@ -91,11 +108,11 @@ test('recorded drift is reported and never written; only the mapped token secret
 });
 
 test('an unknown, non-rotatable or missing credential is a usage error before any read or write', async () => {
-  for (const credential of ['wg-cloudflare-unknown', 'wg-cloudflare-billing', 'wg-cloudflare-audit', 'wg-github-app', VALUE]) {
+  for (const credential of ['wg-cloudflare-demo', 'wg-cloudflare-unknown', 'wg-cloudflare-billing', 'wg-cloudflare-audit', 'wg-github-app', VALUE]) {
     const result = await rotate({ argv: ['--credential', credential, '--apply'] });
     assert.equal(result.code, EXIT.usage, credential);
     assert.deepEqual(result.calls, [], 'nothing is read or written');
-    assert.match(result.err, /one of wg-cloudflare-demo, wg-cloudflare-deploy\. Nothing was read or written\./);
+    assert.match(result.err, /one of wg-cloudflare-deploy\. Nothing was read or written\./);
   }
   for (const argv of [['--apply'], [], ['--credential'], [...DEPLOY, ...DEPLOY], ['--owner', 'Wizard-Gang', ...DEPLOY], [...DEPLOY, '--skip-verify'], [...DEPLOY, '--apply', VALUE]]) {
     const result = await rotate({ argv });
@@ -121,7 +138,7 @@ test('a failed write fails the run but the other targets are still written', asy
   assert.equal(result.code, EXIT.writeFailed);
   assert.match(result.err, /error: write failed for Wizard-Gang\/SharkTank — production environment CLOUDFLARE_API_TOKEN: HTTP 403/);
   assert.match(result.err, /Rotation finished with 1 failure\(s\)/);
-  assert.equal(result.sets.length, 3);
+  assert.equal(result.sets.length, 4);
 });
 
 test('a failed or stale re-read fails the run', async () => {
@@ -157,11 +174,11 @@ test('a missing mapped environment or a denied read writes nothing; an unmapped 
   assert.equal(result.code, EXIT.failure);
   assert.match(result.err, /create the production environment in Wizard-Gang\/Hexframe first; nothing was written/);
   assert.deepEqual(result.sets, []);
-  const demoless = convergedRepos();
-  demoless[DEMO].environments = {};
-  result = await rotate({ repos: demoless });
+  const unmapped = convergedRepos();
+  delete unmapped[DEMO].environments['git-demo'];
+  result = await rotate({ repos: unmapped });
   assert.equal(result.code, EXIT.rotated, result.err);
-  assert.equal(result.sets.length, 3);
+  assert.equal(result.sets.length, 4);
   result = await rotate({ fail: [`environments:${DEMO}`] });
   assert.equal(result.code, EXIT.readAccess);
   assert.deepEqual(result.sets, []);

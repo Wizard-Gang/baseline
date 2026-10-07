@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 // A stub `gh` executable on PATH, so the scripts spawn a real process. It serves secret and variable metadata from
-// a JSON state file and appends every call's argv and stdin to a log, so tests can prove where a value travelled.
+// a JSON state file (variable values only for gh variable get) and appends every call's argv and stdin to a log, so tests can prove where a value travelled.
 const STUB = `
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
@@ -31,6 +31,11 @@ if (!scope) fail('HTTP 404: environment not found');
 if (argv[0] === 'variable' && argv[1] === 'list') {
   if (state.fail.includes('vars:' + key)) fail('HTTP 403: Resource not accessible');
   process.stdout.write(JSON.stringify(Object.entries(scope.variables).map(([name, updatedAt]) => ({ name, updatedAt }))));
+  process.exit(0);
+}
+if (argv[0] === 'variable' && argv[1] === 'get') {
+  if (!Object.hasOwn(scope.variables, argv[2])) fail('HTTP 404: variable not found');
+  process.stdout.write((state.variableValues[key + ':' + argv[2]] ?? state.variableValue) + '\\n');
   process.exit(0);
 }
 if (argv[0] === 'secret' && argv[1] === 'list') {
@@ -80,13 +85,16 @@ export function recordedRepos() {
   return repos;
 }
 
-export function fakeGh({ repos = convergedRepos(), fail = [], authenticated = true } = {}) {
+/** The account ID every fake CLOUDFLARE_ACCOUNT_ID variable holds unless variableValues overrides it per scope. */
+export const ACCOUNT_ID = 'e'.repeat(32);
+
+export function fakeGh({ repos = convergedRepos(), fail = [], authenticated = true, variableValues = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fake-gh-'));
   const state = join(dir, 'state.json');
   const log = join(dir, 'calls.jsonl');
   writeFileSync(join(dir, 'gh'), `#!${process.execPath}\n${STUB}`);
   chmodSync(join(dir, 'gh'), 0o755);
-  writeFileSync(state, JSON.stringify({ repos, fail, authenticated, writes: [], now: '2026-10-05T12:00:00Z' }));
+  writeFileSync(state, JSON.stringify({ repos, fail, authenticated, writes: [], now: '2026-10-05T12:00:00Z', variableValue: ACCOUNT_ID, variableValues }));
   writeFileSync(log, '');
   return {
     env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}`, FAKE_GH_STATE: state, FAKE_GH_LOG: log },

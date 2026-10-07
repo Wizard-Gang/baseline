@@ -25,6 +25,17 @@ function failuresFor(mutate) {
   return failures.length ? failures : crossCheckSecretRegistry(registry, config, scripts);
 }
 
+// The retired demo exception, kept as the shape a bounded exception must have.
+const SAMPLE_EXCEPTION = Object.freeze({
+  name: 'CLOUDFLARE_API_TOKEN', home: 'github-environment', consumer: `${DEMO}:production`, credential: 'wg-cloudflare-demo',
+  reason: 'The demo deploy ran its own demo-blob D1 migrations, which need D1 Edit.',
+  until: 'The demo Phase 4 move to records/events ends its own D1 migrations; then wg-cloudflare-demo is revoked.',
+});
+const withException = (registry) => {
+  registry.exceptions.push({ ...SAMPLE_EXCEPTION });
+  return registry.exceptions[0];
+};
+
 function rejects(mutate, expected) {
   const failures = failuresFor(mutate);
   assert.ok(failures.some((failure) => failure.includes(expected)),
@@ -54,20 +65,17 @@ test('the committed registry records the 2026-10-04 target', () => {
     'MICROSOFT_OAUTH_CLIENT_SECRET=wg-microsoft-oauth', 'wg-cloudflare-audit=wg-cloudflare-audit']);
   assert.deepEqual(find(committed, 'APP_PRIVATE_KEY', 'github-environment').consumers, [`${DEMO}:git-demo`]);
   assert.deepEqual(find(committed, 'APP_ID', 'github-environment').consumers, [`${DEMO}:git-demo`]);
-  // The demo's own deploy token is the one exception, and it ends with the demo's Phase 4 D1 move.
-  assert.equal(committed.exceptions.length, 1);
-  const [exception] = committed.exceptions;
-  assert.deepEqual([exception.name, exception.home, exception.consumer, exception.credential],
-    ['CLOUDFLARE_API_TOKEN', 'github-environment', `${DEMO}:production`, 'wg-cloudflare-demo']);
-  assert.match(exception.until, /Phase 4/);
-  assert.match(exception.until, /wg-cloudflare-demo is revoked/);
+  // BASE-037 ended the demo's deploy-token exception: every production CLOUDFLARE_API_TOKEN is wg-cloudflare-deploy.
+  assert.deepEqual(committed.exceptions, []);
+  assert.deepEqual(find(committed, 'CLOUDFLARE_API_TOKEN', 'github-environment').consumers.filter((consumer) => consumer.startsWith(DEMO)),
+    [`${DEMO}:production`]);
 });
 
 test('unknown keys are rejected at every level', () => {
   rejects((registry) => { registry.owner = 'jacob'; }, 'secrets: unknown key owner');
   rejects((registry) => { registry.entries[0].value = 'redacted'; }, 'entries[0]: unknown key value');
   rejects((registry) => { find(registry, 'WG_OPS_TOKEN', 'secrets-store').source = 'WG_SESSION_KEY'; }, 'unknown key source');
-  rejects((registry) => { registry.exceptions[0].expires = '2027-01-01'; }, 'exceptions[0]: unknown key expires');
+  rejects((registry) => { withException(registry).expires = '2027-01-01'; }, 'exceptions[0]: unknown key expires');
   rejects((registry) => { delete registry.entries[1].purpose; }, 'entries[1]: missing key purpose');
   rejects((registry) => { registry.entries[0].kind = 'password'; }, 'kind must be one of secret, variable, derived');
 });
@@ -133,7 +141,7 @@ test('a duplicate name in one home and a shared console credential are rejected'
   rejects((registry) => { find(registry, 'CLOUDFLARE_BILLING_TOKEN', 'worker').credential = 'cloudflare-billing'; },
     'console credential must be named wg-cloudflare-<purpose>');
   rejects((registry) => { find(registry, 'GITHUB_APP_ID', 'worker').credential = 'wg-github-app'; }, 'only a secret has a console credential');
-  rejects((registry) => { registry.exceptions[0].credential = 'wg-cloudflare-billing'; },
+  rejects((registry) => { withException(registry).credential = 'wg-cloudflare-billing'; },
     'console credential wg-cloudflare-billing is already registered');
 });
 
@@ -145,10 +153,11 @@ test('a derived key must name WG_SESSION_KEY as its source', () => {
     'derived key identity-session is a wizardgang secrets-store key');
 });
 
-test('the demo deploy-token exception stays bounded', () => {
-  rejects((registry) => { registry.exceptions[0].consumer = 'Wizard-Gang/baseline:production'; }, 'does not use CLOUDFLARE_API_TOKEN');
-  rejects((registry) => { registry.exceptions[0].until = ''; }, 'until must state the end condition');
-  rejects((registry) => { registry.exceptions[0].name = 'CLOUDFLARE_ACCOUNT_ID'; }, 'must name a registered secret with a console credential');
+test('a deploy-token exception is accepted only while bounded', () => {
+  assert.deepEqual(failuresFor((registry) => { withException(registry); }), []);
+  rejects((registry) => { withException(registry).consumer = 'Wizard-Gang/baseline:production'; }, 'does not use CLOUDFLARE_API_TOKEN');
+  rejects((registry) => { withException(registry).until = ''; }, 'until must state the end condition');
+  rejects((registry) => { withException(registry).name = 'CLOUDFLARE_ACCOUNT_ID'; }, 'must name a registered secret with a console credential');
 });
 
 test('any mismatch with config/cloudflare.json is rejected', () => {
