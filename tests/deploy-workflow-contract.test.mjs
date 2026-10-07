@@ -95,6 +95,7 @@ test('the deploy can never auto-create resources, and is the only wrangler mutat
     rejects(edit(flag, ''), /the only wrangler deploy must be/);
   }
   rejects(edit('npx --no-install wrangler deploy \\', 'npx wrangler deploy \\'), /the only wrangler deploy must be/);
+  rejects(edit('            --var "CLOUDFLARE_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID" \\\n', ''), /must pass --var "CLOUDFLARE_ACCOUNT_ID/);
   rejects(edit('npm run build --if-present\n', 'npm run build --if-present && npx wrangler deploy\n'), /the only wrangler deploy must be/);
   for (const command of ['npx --no-install wrangler d1 create wizardgang', 'npx --no-install wrangler r2 bucket create wizardgang', 'npx --no-install wrangler rollback']) {
     rejects(edit('          npx --no-install wrangler --version\n', `          ${command}\n`), /other mutating wrangler command/);

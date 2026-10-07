@@ -2,20 +2,6 @@
 
 ## Open tasks
 
-### BASE-036 — [FIX] Pass the account ID to every Worker at deploy time
-
-- Dependency: None.
-- Why: The demo's usage report needs `CLOUDFLARE_ACCOUNT_ID` at runtime. Its old `deploy.yml` passed it with `wrangler deploy --var`, but `deploy-worker.yml` does not, so since the demo moved to it (DEMO-459, v0.31.0) live `https://demo.wizardgang.ai/api/reporting/operations` reports Cloudflare analytics as not configured. The platform rule is that the account ID is never committed and deploys read `CLOUDFLARE_ACCOUNT_ID`, so the fix belongs in the deploy, not in a consumer's `wrangler.jsonc`.
-- Scope:
-  - `.github/workflows/deploy-worker.yml` passes `--var "CLOUDFLARE_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID"` to `wrangler deploy`, from the `production` variable it already requires.
-  - The `wrangler.jsonc` conformance check rejects a committed `vars.CLOUDFLARE_ACCOUNT_ID`, because the deploy supplies it.
-  - `platform/deploy/README.md` documents that each deployed Worker receives the plain-text var `CLOUDFLARE_ACCOUNT_ID`.
-  - Tests cover the deploy argument and the conformance rejection.
-- Non-goals: No secret, token, permission, Worker name or provider change. No consumer change; each consumer picks this up when it next vendors `platform/` and pins `deploy-worker.yml`.
-- Acceptance: A Worker deployed through `deploy-worker.yml` sees `env.CLOUDFLARE_ACCOUNT_ID`; a consumer `wrangler.jsonc` that commits it fails conformance. `npm run check` passes.
-- Validation: Pinned `npm ci`, focused deploy-workflow and conformance tests, `npm run check`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: `.github/workflows/deploy-worker.yml`, `platform/conformance/`, `platform/deploy/README.md`, the demo's `src/lib/cloudflare-usage.ts` and its DEMO-482.
-
 ### BASE-037 — [FIX] End the demo deploy-token exception and let rotation find the account ID
 
 - Dependency: BASE-036.
