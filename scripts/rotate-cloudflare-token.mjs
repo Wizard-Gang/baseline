@@ -17,13 +17,14 @@ const TOKEN_SHAPE = /^[\x21-\x7e]{20,512}$/;
 
 export const USAGE = `Usage: npm run rotate:cloudflare-token -- --credential <console name> [--apply [--skip-verify]]
 
-The console credential (wg-cloudflare-deploy or wg-cloudflare-demo) selects the targets: only the GitHub
-environment secrets that config/secrets.json maps to it, including a registry exception. Without --apply, prints
+The console credential selects the targets: only the GitHub environment secrets that config/secrets.json maps to
+it, including any registry exception. Without --apply, prints
 those targets and the registry drift and changes nothing.
 With --apply, reads the new token from stdin (piped, never a terminal or an argument), checks that Cloudflare
 reports it active, writes it to each mapped environment with gh secret set over stdin, and re-reads the secret's
 updatedAt after each write. Every other secret, environment and repository-level copy is never written.
-CLOUDFLARE_ACCOUNT_ID, when set, verifies an account-owned token.
+The token is verified against the account in CLOUDFLARE_ACCOUNT_ID or, when that is unset, against the one account
+the targets' CLOUDFLARE_ACCOUNT_ID environment variables name.
 
   pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply`;
 
@@ -51,9 +52,22 @@ async function readValue(stdin) {
   return value;
 }
 
+// The deploy tokens are account-owned, which /user/tokens/verify rejects, so verification always names the account.
+// Without CLOUDFLARE_ACCOUNT_ID in the shell, the targets' production variable of that name must agree on one value.
+export function accountIdFromTargets(gh, targets) {
+  const ids = new Set();
+  for (const { repository, environment } of targets) {
+    const { status, stdout } = gh(['variable', 'get', 'CLOUDFLARE_ACCOUNT_ID', '--repo', repository, '--env', environment]);
+    if (status === 0 && stdout.trim()) ids.add(stdout.trim());
+  }
+  if (ids.size === 1) return { accountId: [...ids][0] };
+  return { problem: ids.size ? 'the targets\' CLOUDFLARE_ACCOUNT_ID variables disagree'
+    : 'no target holds a CLOUDFLARE_ACCOUNT_ID variable; set CLOUDFLARE_ACCOUNT_ID in the shell' };
+}
+
 async function cloudflareReportsActive(value, accountId, fetchImpl) {
-  const path = accountId ? `/accounts/${encodeURIComponent(accountId)}/tokens/verify` : '/user/tokens/verify';
   try {
+    const path = `/accounts/${encodeURIComponent(accountId)}/tokens/verify`;
     const response = await fetchImpl(`${CLOUDFLARE_API}${path}`, { method: 'GET', headers: { Authorization: `Bearer ${value}` } });
     const body = await response.json();
     return response.ok && body?.success === true && body?.result?.status === 'active';
@@ -122,6 +136,17 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
     return EXIT.rotated;
   }
 
+  const { skipVerify } = options;
+  let accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  if (!skipVerify && !accountId) {
+    const found = accountIdFromTargets(gh, mapped);
+    if (found.problem) {
+      error(`error: ${found.problem}; nothing was read from stdin or written`);
+      return EXIT.failure;
+    }
+    accountId = found.accountId;
+  }
+
   let value;
   try {
     value = await readValue(stdin);
@@ -133,9 +158,9 @@ export async function runRotateCloudflareToken({ argv = process.argv.slice(2), e
   const say = (text) => log(redact(text));
   const warn = (text) => error(redact(text));
 
-  if (argv.includes('--skip-verify')) {
+  if (skipVerify) {
     say('Skipping the Cloudflare token check (--skip-verify).');
-  } else if (!(await cloudflareReportsActive(value, env.CLOUDFLARE_ACCOUNT_ID, fetchImpl))) {
+  } else if (!(await cloudflareReportsActive(value, accountId, fetchImpl))) {
     warn('error: Cloudflare did not report the token as active; nothing was written');
     return EXIT.failure;
   } else {

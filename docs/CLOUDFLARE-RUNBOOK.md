@@ -154,14 +154,14 @@ Run these in order. Step 3.1 runs before Phase 1. Steps 3.2 to 3.6 run after Pha
 
 ### 3.6 Mint the scoped deploy token and set it in every production environment
 
-- **Precondition:** `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` prints a `production` `CLOUDFLARE_API_TOKEN` line for each repository in `config/cloudflare.json`, with the console credential `wg-cloudflare-deploy` for every repository but the demo, whose token is `wg-cloudflare-demo` by registry exception, and a `CLOUDFLARE_ACCOUNT_ID` variable line for each.
+- **Precondition:** `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` prints a `production` `CLOUDFLARE_API_TOKEN` line for each repository in `config/cloudflare.json`, with the console credential `wg-cloudflare-deploy` for every repository, and a `CLOUDFLARE_ACCOUNT_ID` variable line for each.
 - **Command:** In the dashboard, under Account API Tokens, create the custom account-owned token `wg-cloudflare-deploy` with these minimum permissions:
   - Account: **Workers Scripts: Edit**. This covers uploading and deploying versions, static assets, Durable Object migrations, crons, Worker secrets, custom domains and `wrangler deployments status`.
   - Account: **Secrets Store: Edit**. Cloudflare treats binding a Secrets Store secret to a Worker as a write against the secret, so a token with only Read fails to deploy the `WG_OPS_TOKEN` and `WG_SESSION_KEY` bindings.
   - Zone `wizardgang.ai` only: **Workers Routes: Edit** and **Zone: Read**, for the custom domains.
   - Nothing else: no D1, R2 or KV edit, and no DNS, rulesets, API tokens, members or billing. If a deploy fails on a missing permission, add only the permission it names, and record the addition here through a controlled change.
 
-  Copy the value, then run the plan, the rotation and the account ID variable writes. Rotation writes only the environments the registry maps to `wg-cloudflare-deploy`, so the demo's own token is never overwritten; the demo's is rotated the same way with `--credential wg-cloudflare-demo`.
+  Copy the value, then run the plan, the rotation and the account ID variable writes. Rotation writes only the environments the registry maps to `wg-cloudflare-deploy`, and verifies the token against the account those environments' `CLOUDFLARE_ACCOUNT_ID` variables name.
 
   ```sh
   cd ~/Documents/GitHub/baseline && npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy
@@ -169,7 +169,7 @@ Run these in order. Step 3.1 runs before Phase 1. Steps 3.2 to 3.6 run after Pha
   A="$(npx --yes wrangler@4.147.0 whoami --json | jq -r '.accounts[0].id')"; for r in Wizard-Gang/WizardGang Wizard-Gang/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do printf %s "$A" | gh variable set CLOUDFLARE_ACCOUNT_ID --repo "$r" --env production; done
   ```
 
-- **Read-back:** Rotation prints `Cloudflare reports the token as active.`, a new `updatedAt` for every target and `Rotation of wg-cloudflare-deploy complete for all 3 target(s).`. `npm run discover:cloudflare-token-targets` then shows the new `updatedAt` on those three lines, and the demo's line keeps its own. It also shows an `updatedAt` on every `CLOUDFLARE_ACCOUNT_ID` variable line; a leftover `CLOUDFLARE_ACCOUNT_ID` secret is retired by R7.
+- **Read-back:** Rotation prints `Cloudflare reports the token as active.`, a new `updatedAt` for every target and `Rotation of wg-cloudflare-deploy complete for all 4 target(s).`. `npm run discover:cloudflare-token-targets` then shows the new `updatedAt` on those four lines. It also shows an `updatedAt` on every `CLOUDFLARE_ACCOUNT_ID` variable line; a leftover `CLOUDFLARE_ACCOUNT_ID` secret is retired by R7.
 - **Rollback:** GitHub secrets are write-only, so the old value cannot be restored. Keep superseded deploy tokens active until each repository has deployed with the new one, then revoke them in the dashboard. If the new token is wrong, fix its permissions, or roll it and pipe the new value through `rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply` again. `gh variable delete CLOUDFLARE_ACCOUNT_ID --repo <repository> --env production` removes a wrong account ID write.
 
 ## Phase 4 hand-off
@@ -242,7 +242,7 @@ The pairs are `wizardgang-portfolio` → `wizardgang`, `wizardgang-architecture-
 - **Precondition:** `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo` shows both names at repository level. `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo --env production` shows the environment's own `CLOUDFLARE_API_TOKEN`. The demo's only deploy job binds the `production` environment, which shadows both repository-level copies.
 - **Command:** `gh secret delete CLOUDFLARE_API_TOKEN --repo Wizard-Gang/wizardgang-architecture-demo`, then `gh secret delete CLOUDFLARE_ACCOUNT_ID --repo Wizard-Gang/wizardgang-architecture-demo`
 - **Read-back:** `gh secret list --repo Wizard-Gang/wizardgang-architecture-demo` shows neither name, and `cd ~/Documents/GitHub/baseline && npm run discover:cloudflare-token-targets` reports no repository-level secret for the demo.
-- **Rollback:** None is needed, because the registry allows no repository-level secret. A workflow that still needs a value reads it from its `production` environment: the token through `rotate:cloudflare-token -- --credential wg-cloudflare-demo --apply`, and the account ID as R7's variable.
+- **Rollback:** None is needed, because the registry allows no repository-level secret. A workflow that still needs a value reads it from its `production` environment: the token through `rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply`, and the account ID as R7's variable.
 
 ### R7 `CLOUDFLARE_ACCOUNT_ID` from secret to variable, before the next `deploy-worker.yml` deploy
 

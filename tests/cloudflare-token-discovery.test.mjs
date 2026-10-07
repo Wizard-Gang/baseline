@@ -28,21 +28,20 @@ function discover(options = {}, { argv = [], at = root } = {}) {
   }
 }
 
-test('targets are the registry GitHub-environment entries, with the demo exception credential', () => {
+test('targets are the registry GitHub-environment entries, every deploy token on wg-cloudflare-deploy', () => {
   assert.deepEqual(repositories, [...REPOSITORIES]);
   const row = ({ repository, environment, kind, name, credential }) => `${repository} ${environment} ${kind} ${name} ${credential}`;
   assert.deepEqual(registryTargets(registry, repositories).map(row), [
     `${WG} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${WG} production variable CLOUDFLARE_ACCOUNT_ID null`,
     `${DEMO} git-demo secret APP_PRIVATE_KEY wg-github-app`, `${DEMO} git-demo variable APP_ID null`,
-    `${DEMO} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-demo`, `${DEMO} production variable CLOUDFLARE_ACCOUNT_ID null`,
+    `${DEMO} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${DEMO} production variable CLOUDFLARE_ACCOUNT_ID null`,
     `${SHARK} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${SHARK} production variable CLOUDFLARE_ACCOUNT_ID null`,
     `${HEX} production secret CLOUDFLARE_API_TOKEN wg-cloudflare-deploy`, `${HEX} production variable CLOUDFLARE_ACCOUNT_ID null`,
   ]);
-  assert.deepEqual(rotatableCredentials(registry), ['wg-cloudflare-demo', 'wg-cloudflare-deploy']);
+  assert.deepEqual(rotatableCredentials(registry), ['wg-cloudflare-deploy']);
   const where = (credential) => credentialTargets(registry, repositories, credential)?.map((target) => `${target.repository}:${target.environment}`);
-  assert.deepEqual(where('wg-cloudflare-deploy'), [`${WG}:production`, `${SHARK}:production`, `${HEX}:production`]);
-  assert.deepEqual(where('wg-cloudflare-demo'), [`${DEMO}:production`]);
-  for (const credential of ['wg-cloudflare-billing', 'wg-cloudflare-audit', 'wg-github-app', 'wg-cloudflare-unknown', '']) {
+  assert.deepEqual(where('wg-cloudflare-deploy'), [`${WG}:production`, `${DEMO}:production`, `${SHARK}:production`, `${HEX}:production`]);
+  for (const credential of ['wg-cloudflare-demo', 'wg-cloudflare-billing', 'wg-cloudflare-audit', 'wg-github-app', 'wg-cloudflare-unknown', '']) {
     assert.equal(credentialTargets(registry, repositories, credential), null, credential);
   }
 });
@@ -55,7 +54,7 @@ test('a converged account lists every registry entry with no drift, using read-o
   assert.deepEqual(result.out, [
     `${WG}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${WG}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
     `${DEMO}\tgit-demo\tsecret\tAPP_PRIVATE_KEY\twg-github-app\t2026-10-04T19:10:00Z`, `${DEMO}\tgit-demo\tvariable\tAPP_ID\t-\t2026-10-04T19:10:00Z`,
-    `${DEMO}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-demo\t${DEMO_DATE}`, `${DEMO}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
+    `${DEMO}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEMO_DATE}`, `${DEMO}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
     `${SHARK}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${SHARK}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
     `${HEX}\tproduction\tsecret\tCLOUDFLARE_API_TOKEN\twg-cloudflare-deploy\t${DEPLOY_DATE}`, `${HEX}\tproduction\tvariable\tCLOUDFLARE_ACCOUNT_ID\t-\t${account}`,
   ]);

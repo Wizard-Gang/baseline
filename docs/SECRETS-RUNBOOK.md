@@ -28,21 +28,12 @@ All four are account-owned tokens under Manage Account → Account API Tokens, n
 
 ### wg-cloudflare-deploy
 
-- **Precondition:** The GitHub read lists `production` `CLOUDFLARE_API_TOKEN` with `wg-cloudflare-deploy` for WizardGang, SharkTank and Hexframe. No deploy is running: `for r in Wizard-Gang/WizardGang Wizard-Gang/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do gh run list --repo "$r" --status in_progress; done` prints nothing.
+- **Precondition:** The GitHub read lists `production` `CLOUDFLARE_API_TOKEN` with `wg-cloudflare-deploy` for WizardGang, the demo, SharkTank and Hexframe. No deploy is running: `for r in Wizard-Gang/WizardGang Wizard-Gang/wizardgang-architecture-demo Wizard-Gang/SharkTank Wizard-Gang/Hexframe; do gh run list --repo "$r" --status in_progress; done` prints nothing.
 - **Mint and set:** [Cloudflare runbook step 3.6](CLOUDFLARE-RUNBOOK.md#36-mint-the-scoped-deploy-token-and-set-it-in-every-production-environment): Workers Scripts Edit and Secrets Store Edit, plus Workers Routes Edit and Zone Read on `wizardgang.ai` only. Copy the value, then run `cd ~/Documents/GitHub/baseline && pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply; pbcopy </dev/null`.
-- **Read-back:** Rotation prints `Cloudflare reports the token as active.` and `Rotation of wg-cloudflare-deploy complete for all 3 target(s).`. The GitHub read shows the new `updatedAt` on those three lines only.
+- **Read-back:** Rotation prints `Cloudflare reports the token as active.` and `Rotation of wg-cloudflare-deploy complete for all 4 target(s).`. The GitHub read shows the new `updatedAt` on those four lines only. Rotation verifies the token against the account in the targets' `CLOUDFLARE_ACCOUNT_ID` variables, so the shell needs no account ID.
 - **Rotate:** Roll it, then run the same pipe and read-back. The next deploy of each repository proves it.
-- **Revoke:** Delete it in the dashboard only after a replacement is set, because every `deploy-worker.yml` deploy outside the demo uses it. The dashboard no longer lists it.
+- **Revoke:** Delete it in the dashboard only after a replacement is set, because every `deploy-worker.yml` deploy uses it. The dashboard no longer lists it.
 - **Rollback:** None for a rolled or deleted value; mint and set a new one. GitHub secrets are write-only.
-
-### wg-cloudflare-demo
-
-- **Precondition:** `config/secrets.json` holds the exception that maps the demo's `production` `CLOUDFLARE_API_TOKEN` to `wg-cloudflare-demo`, and the GitHub read shows that line. No demo deploy is running.
-- **Mint and set:** Create it with Workers Scripts Edit and D1 Edit, plus Workers Routes Edit and Zone Read on `wizardgang.ai`; the D1 permission exists only for the demo's own `demo-blob` migrations. Copy the value, then run `cd ~/Documents/GitHub/baseline && pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-demo --apply; pbcopy </dev/null`.
-- **Read-back:** Rotation prints `Rotation of wg-cloudflare-demo complete for all 1 target(s).`, and the GitHub read shows the new `updatedAt` on the demo's line only.
-- **Rotate:** Roll it, then run the same pipe and read-back.
-- **Revoke:** When the exception ends: the demo's Phase 4 move to `records`/`events` is deployed, `git -C ~/Documents/GitHub/wizardgang-architecture-demo grep -n "d1 migrations apply" origin/main -- .github` prints nothing, and the baseline change that removes the exception is merged, so the GitHub read maps the demo's line to `wg-cloudflare-deploy`. Roll `wg-cloudflare-deploy` and pipe it through `rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply`, which now writes all 4 targets. Then delete `wg-cloudflare-demo` in the dashboard. The dashboard no longer lists it.
-- **Rollback:** Until it is deleted, rotating it again restores the demo's line. After deletion, nothing; the demo deploys with `wg-cloudflare-deploy`.
 
 ### wg-cloudflare-billing
 
@@ -188,7 +179,7 @@ Both live only in the Secrets Store `default_secrets_store`, bound by every Work
 | Demo Worker `DEMO_SESSION_SECRET`, `IDENTITY_SESSION_SECRET`, `IDENTITY_AUDIT_HMAC_SECRET` | `demo-session`, `identity-session`, `identity-audit` |
 | Demo Worker `DEMO_ADMIN_PASSWORD`, `DEMO_ADMIN_USER` | `WG_OPS_TOKEN` |
 
-`GITHUB_REPORTING_WRITE_TOKEN` and the secret `SAML_IDP_CERT` were declared by the demo but never set, so nothing retires. Elsewhere: each `production` `CLOUDFLARE_ACCOUNT_ID` secret retires by Cloudflare runbook R7, SharkTank's `OPS_TOKEN` and `OPS_USERNAME` with its ST-146 and R3, and `wg-cloudflare-demo` by its own Revoke. Archived FightLab's `production` `CLOUDFLARE_ACCOUNT_ID` can be deleted only after the owner unarchives FightLab.
+`GITHUB_REPORTING_WRITE_TOKEN` and the secret `SAML_IDP_CERT` were declared by the demo but never set, so nothing retires. Elsewhere: each `production` `CLOUDFLARE_ACCOUNT_ID` secret retires by Cloudflare runbook R7, SharkTank's `OPS_TOKEN` and `OPS_USERNAME` with its ST-146 and R3, and `wg-cloudflare-demo` by X5. Archived FightLab's `production` `CLOUDFLARE_ACCOUNT_ID` can be deleted only after the owner unarchives FightLab.
 
 ### X1 The `MICROSOFT_TENANT_ID` secret, immediately before the normalized deploy
 
@@ -223,10 +214,17 @@ Both live only in the Secrets Store `default_secrets_store`, bound by every Work
 - **Read-back:** The pages no longer list them, and the demo's reporting and `git-demo.yml` still work through the App.
 - **Rollback:** None for a deleted token; the App replaces it.
 
+### X5 The demo's own deploy token `wg-cloudflare-demo`, after BASE-037
+
+- **Precondition:** BASE-037 is merged, so `config/secrets.json` holds no exception and the rotation plan for `wg-cloudflare-deploy` lists 4 targets, the demo's among them. The demo deploys through `deploy-worker.yml`, which runs no D1 migrations: `git -C ~/Documents/GitHub/wizardgang-architecture-demo grep -n "d1 migrations apply" origin/main -- .github` prints nothing. No deploy is running.
+- **Command:** Roll `wg-cloudflare-deploy` in the dashboard and copy the value, then run `cd ~/Documents/GitHub/baseline && pbpaste | npm run rotate:cloudflare-token -- --credential wg-cloudflare-deploy --apply; pbcopy </dev/null`. Then delete `wg-cloudflare-demo` in the dashboard.
+- **Read-back:** Rotation prints `Rotation of wg-cloudflare-deploy complete for all 4 target(s).`, the dashboard no longer lists `wg-cloudflare-demo`, and the demo's next deploy passes.
+- **Rollback:** None for a deleted token. If the demo's deploy fails on a missing permission, add only that permission to `wg-cloudflare-deploy` through a controlled change to Cloudflare runbook step 3.6.
+
 ## Order and hand-off
 
 These are the owner's recorded defaults as of 2026-10-04; changing one is a controlled change to this runbook.
 
-- **The owner's order.** First, before the demo's normalization deploys: set `CLOUDFLARE_BILLING_TOKEN` (under both names), `wg-github-app` (with the `git-demo` environment), the three OAuth client secrets and both webhook secrets, and collect the public values for that change: the App and installation IDs, the OAuth client and tenant IDs and the SAML values. The `CLOUDFLARE_ACCOUNT_ID` variable is already set (Cloudflare runbook R7). Second, X1 runs immediately before that deploy. Third, after it, every read-back, then X2, X3, X4 and Cloudflare runbook R5. Last, at Phase 4: each R7 secret deletion as its repository stops reading it, R1 to R4, and the `wg-cloudflare-demo` Revoke at the demo's D1 move.
+- **The owner's order.** First, before the demo's normalization deploys: set `CLOUDFLARE_BILLING_TOKEN` (under both names), `wg-github-app` (with the `git-demo` environment), the three OAuth client secrets and both webhook secrets, and collect the public values for that change: the App and installation IDs, the OAuth client and tenant IDs and the SAML values. The `CLOUDFLARE_ACCOUNT_ID` variable is already set (Cloudflare runbook R7). Second, X1 runs immediately before that deploy. Third, after it, every read-back, then X2, X3, X4 and Cloudflare runbook R5. Last, at Phase 4: each R7 secret deletion as its repository stops reading it, R1 to R4, and X5 once BASE-037 is merged.
 - **The demo's own normalization task.** The demo queues it in its own plan. It vendors `platform/` from a merged baseline commit that ships `deriveKey` and `githubAppToken`. It renames its Worker secrets to the seven registry names and commits the variables, uses `deriveKey` for `demo-session`, `identity-session` and `identity-audit` (signing demo sessions out once) and `githubAppToken` in place of its GitHub tokens, and drops `DEMO_ADMIN_*` for the `WG_OPS_TOKEN` gate. Its `git-demo.yml` signs as the App in GitHub Actions from the `git-demo` environment's `APP_ID` and `APP_PRIVATE_KEY`, not through wg-edge.
 - **What stays drift until Phase 4.** `npm run verify:cloudflare` keeps reporting the old Worker names and their secrets, the `demo-blob`, `wizardgang-demo-assets` and `wizardgang-demo-r2` storage, and the declared Workers and their secrets as missing. The GitHub read keeps reporting the `CLOUDFLARE_ACCOUNT_ID` secrets of SharkTank, Hexframe and the demo until their own deploys stop reading them, and the unregistered `CLOUDFLARE_DO_NAMESPACE` (demo), `PRODUCTION_HOST` (Hexframe) and repository-level `PRODUCTION_DEPLOY_ENABLED` (SharkTank) until a baseline change registers each or its Phase 4 migration deletes it. The demo's `git-demo` environment and `GIT_DEMO_PR_TOKEN` stay drift until the App steps and X3 run.

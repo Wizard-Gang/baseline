@@ -33,6 +33,7 @@ const INVENTORY_2026_10_04 = ['GIT_DEMO_PR_TOKEN', 'GITHUB_REPORTING_WRITE_TOKEN
 const credentials = [...new Set([...registry.entries, ...registry.exceptions].map((entry) => entry.credential).filter(Boolean))];
 const secretsWithoutConsole = registry.entries.filter((entry) => entry.kind === 'secret' && entry.credential === null).map((entry) => entry.name);
 const CONSOLE_ONLY = ['wg-saml-idp']; // the SAML IdP application: public configuration, no secret
+const RETIRED_CONSOLE = ['wg-cloudflare-demo']; // retired by X5
 const CREDENTIAL_PARTS = ['Precondition', 'Mint and set', 'Read-back', 'Rotate', 'Revoke', 'Rollback'];
 const STEP_PARTS = ['Precondition', 'Command', 'Read-back', 'Rollback'];
 
@@ -53,7 +54,7 @@ test('every credential has a section with its six parts, and every retirement it
   assert.deepEqual(titles.sort(), [...credentials, ...secretsWithoutConsole, ...CONSOLE_ONLY].sort());
   for (const { title, body } of credentialSteps) assert.ok(hasPartsInOrder(body, CREDENTIAL_PARTS), `${title} must list its six parts in order`);
   const retirements = steps.filter(({ part }) => part.startsWith('Retire'));
-  assert.deepEqual(retirements.map(({ title }) => title.split(' ')[0]), ['X1', 'X2', 'X3', 'X4']);
+  assert.deepEqual(retirements.map(({ title }) => title.split(' ')[0]), ['X1', 'X2', 'X3', 'X4', 'X5']);
   for (const { title, body } of retirements) assert.ok(hasPartsInOrder(body, STEP_PARTS), `${title} must list its four parts in order`);
 });
 
@@ -87,7 +88,7 @@ test('every command writes a registry name to its registry home', () => {
   for (const loop of repositoryLoops(runbook)) assert.deepEqual(loop, configRepositories(desired));
 });
 
-test('every npm script exists, and both GitHub-environment tokens rotate through the registry tool', () => {
+test('every npm script exists, and each GitHub-environment token rotates through the registry tool', () => {
   for (const name of npmScripts(runbook)) assert.ok(Object.hasOwn(scripts, name), `npm run ${name} is not a package script`);
   for (const credential of rotatableCredentials(registry)) {
     assert.ok(runbook.includes(`pbpaste | npm run rotate:cloudflare-token -- --credential ${credential} --apply`), `rotate ${credential}`);
@@ -136,7 +137,7 @@ test('the runbook names only registry, inventory and console names, with self-co
   assert.ok(commands(runbook).length > 60);
   const upper = new Set([...registry.entries.map((entry) => entry.name), ...recordedDemo, ...INVENTORY_2026_10_04, 'OPS_TOKEN', 'OPS_USERNAME',
     'DERIVED_KEYS', ...Object.values(desired.workers).flatMap((worker) => worker.secrets)]);
-  const lower = new Set([...credentials, ...CONSOLE_ONLY, ...registry.entries.filter((entry) => entry.kind === 'derived').map((entry) => entry.name),
+  const lower = new Set([...credentials, ...CONSOLE_ONLY, ...RETIRED_CONSOLE, ...registry.entries.filter((entry) => entry.kind === 'derived').map((entry) => entry.name),
     ...DEMO_WORKERS, ...desired.r2.map((bucket) => bucket.name), 'demo-blob', 'wizardgang-demo-assets', 'wizardgang-demo-r2', 'git-demo']);
   for (const [, span] of runbook.matchAll(/`([^`\s]+)`/g)) {
     if (/^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/.test(span)) assert.ok(upper.has(span), `\`${span}\` is outside the registry and inventory`);
