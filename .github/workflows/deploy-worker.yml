@@ -1,6 +1,8 @@
 name: Deploy Worker
 
-# Reusable only. A consuming repository calls this from its own release path with its annotated release tag.
+# Reusable only. A consuming repository calls this from its own release path with its annotated release tag,
+# after a job that call needs has reproduced the tag with npm ci and npm run check. The verify job proves that
+# reproduction from the Actions API instead of running the suite again. The caller job grants actions: read.
 # Baseline itself never triggers or calls it; the repository contract enforces that.
 on:
   workflow_call:
@@ -17,6 +19,10 @@ on:
         description: Full commit the tag must point to
         required: true
         type: string
+    outputs:
+      result:
+        description: The compact, whitelisted deploy result JSON, set only when every production observation passed
+        value: ${{ jobs.deploy.outputs.result }}
 
 permissions:
   contents: read
@@ -29,7 +35,10 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
     env:
       WORKER: ${{ inputs.worker }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -44,7 +53,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .node-version
-          cache: npm
       - name: Bind the annotated tag to package.json and the expected commit
         shell: bash
         run: |
@@ -60,17 +68,10 @@ jobs:
           [ "v$version" = "$RELEASE_TAG" ] || { echo "::error::package.json version $version does not match $RELEASE_TAG"; exit 1; }
           git fetch --force --no-tags origin main:refs/remotes/origin/main
           git merge-base --is-ancestor "$EXPECTED_SHA" refs/remotes/origin/main || { echo "::error::$EXPECTED_SHA is outside main"; exit 1; }
-      - name: Install the pinned npm
-        shell: bash
-        run: |
-          set -euo pipefail
-          manager="$(node -p "require('./package.json').packageManager || ''")"
-          [[ "$manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::packageManager must pin an exact npm"; exit 1; }
-          npm install --global "$manager"
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Reproduce the tagged source checks
-        run: npm run check
+      - name: Prove the caller reproduced the tag in this run attempt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node platform/deploy/verify.mjs evidence --worker "$WORKER" --tag "$RELEASE_TAG" --commit "$EXPECTED_SHA"
       - name: Check the vendored platform pin
         run: node platform/conformance/cli.mjs pin
       - name: Check the Worker config
@@ -91,6 +92,8 @@ jobs:
     environment:
       name: production
       url: ${{ needs.verify.outputs.url }}
+    outputs:
+      result: ${{ steps.observe.outputs.result }}
     env:
       WORKER: ${{ inputs.worker }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -154,8 +157,12 @@ jobs:
           done
           echo "::error::the deployed version did not reach 100% of traffic"
           exit 1
-      - name: Confirm the public /version.json identity
+      - name: Observe the deployed version in production
+        id: observe
         shell: bash
         run: |
           set -euo pipefail
-          node platform/deploy/verify.mjs version --worker "$WORKER" --version "${RELEASE_TAG#v}" --commit "$EXPECTED_SHA"
+          node platform/deploy/verify.mjs observe --worker "$WORKER" --tag "$RELEASE_TAG" --commit "$EXPECTED_SHA" \
+            --deploy-output "$RUNNER_TEMP/wrangler-deploy.ndjson" --status "$RUNNER_TEMP/wrangler-deployment-status.json" \
+            --result "$RUNNER_TEMP/deploy-result.json"
+          echo "result=$(cat "$RUNNER_TEMP/deploy-result.json")" >> "$GITHUB_OUTPUT"

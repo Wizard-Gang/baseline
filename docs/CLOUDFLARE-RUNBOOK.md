@@ -187,8 +187,8 @@ Each consuming repository queues its own migration in its own plan. This runbook
 A Worker is rolled back by redeploying its previous release tag through [`deploy-worker.yml`](../.github/workflows/deploy-worker.yml), never with `wrangler rollback` and never by moving a tag. See [`platform/deploy/README.md`](../platform/deploy/README.md).
 
 - **Precondition:** `curl -fsS https://<host>/version.json` shows the bad version. `git -C ~/Documents/GitHub/<checkout> tag --sort=-v:refname | head -3` names the previous tag, which must be an annotated tag on `main`. Schema is never rolled back by a deploy: a release that needed a newer migration cannot go back past it.
-- **Command:** Run the consumer's caller of `deploy-worker.yml` at the previous tag ref, for example `gh workflow run <caller workflow> --repo <repository> --ref <previous tag>`, so that it passes that tag and its commit. Then run `gh run watch` on the new run.
-- **Read-back:** The run's `verify` and `deploy` jobs pass, which proves 100% of traffic is on the new version. `curl -fsS https://<host>/version.json` shows the previous tag's `version` and `commit`.
+- **Command:** Run the consumer's caller of `deploy-worker.yml` at the previous tag ref, for example `gh workflow run <caller workflow> --repo <repository> --ref <previous tag>`, so that the run is at that tag's commit, its reproduction job reproduces it, and it passes that tag and its commit. A dispatch from `main` naming an older tag fails the reproduction proof. Then run `gh run watch` on the new run.
+- **Read-back:** The run's `verify` and `deploy` jobs pass, which proves 100% of traffic is on the new version and that its health and assets answer; the run's `result` output names the Worker version. `curl -fsS https://<host>/version.json` shows the previous tag's `version` and `commit`.
 - **Rollback:** Redeploy the newer tag the same way.
 
 ## Later retirements
