@@ -224,6 +224,7 @@ export function validateRepositoryAt(root) {
     'tests/wrangler-conformance.test.mjs', 'tests/vendoring.test.mjs', 'tests/fixtures/wrangler-hexframe-f95b735.jsonc',
     DEPLOY_WORKFLOW, 'scripts/deploy-workflow-contract.mjs', 'scripts/workflow-yaml.mjs', 'tests/deploy-workflow-contract.test.mjs',
     'platform/deploy/README.md', 'platform/deploy/index.d.ts', 'platform/deploy/verify.mjs', 'tests/deploy-verify.test.mjs',
+    'platform/deploy/evidence.mjs', 'tests/deploy-evidence.test.mjs',
     'scripts/cloudflare-token-targets.mjs', ...Object.values(TOKEN_SCRIPTS).map((file) => `scripts/${file}`),
     'tests/cloudflare-token-discovery.test.mjs', 'tests/cloudflare-token-rotation.test.mjs', 'tests/fixtures/fake-gh.mjs',
     'docs/CLOUDFLARE-RUNBOOK.md', 'tests/cloudflare-runbook.test.mjs', 'tests/fixtures/runbook.mjs',

@@ -5,6 +5,8 @@ import { block, keys } from './workflow-yaml.mjs';
 
 export const DEPLOY_WORKFLOW = '.github/workflows/deploy-worker.yml';
 export const DEPLOY_INPUTS = Object.freeze(['worker', 'tag', 'expected_sha']);
+// The one output: the compact deploy result the deploy job's observe step writes after every observation passed.
+export const DEPLOY_OUTPUTS = Object.freeze(['result']);
 // config/secrets.json registers the token as a production environment secret and the account ID as a variable.
 export const DEPLOY_SECRETS = Object.freeze(['CLOUDFLARE_API_TOKEN']);
 export const DEPLOY_VARIABLES = Object.freeze(['CLOUDFLARE_ACCOUNT_ID']);
@@ -47,12 +49,16 @@ export function validateDeployWorkflow(source) {
   const on = block(source, 'on');
   if (!sameList(keys(on, 2), ['workflow_call'])) fail('must trigger only on workflow_call');
   const call = block(on ?? '', 'workflow_call', 2);
-  if (!sameList(keys(call, 4), ['inputs'])) fail('workflow_call must declare only inputs, never secrets or outputs');
+  if (!sameList(keys(call, 4), ['inputs', 'outputs'])) fail('workflow_call must declare only inputs and outputs, never secrets');
   const inputs = block(call ?? '', 'inputs', 4);
   if (!sameList(keys(inputs, 6), DEPLOY_INPUTS)) fail(`inputs must be exactly ${DEPLOY_INPUTS.join(', ')}`);
   for (const name of DEPLOY_INPUTS) {
     const input = block(inputs ?? '', name, 6) ?? '';
     if (!/^ {8}required: true$/m.test(input) || !/^ {8}type: string$/m.test(input)) fail(`input ${name} must be a required string`);
+  }
+  const outputs = block(call ?? '', 'outputs', 4);
+  if (!sameList(keys(outputs, 6), DEPLOY_OUTPUTS) || !/^ {8}value: \$\{\{ jobs\.deploy\.outputs\.result \}\}$/m.test(block(outputs ?? '', 'result', 6) ?? '')) {
+    fail('the only output must be result, from jobs.deploy.outputs.result');
   }
   // Consumers call it with secrets: inherit; it must never pass those secrets on to another workflow.
   if (/secrets:\s*inherit/.test(source)) fail('must never pass secrets on to another workflow');
@@ -68,9 +74,17 @@ export function validateDeployWorkflow(source) {
   const verify = block(jobs, 'verify', 2) ?? '';
   const deploy = block(jobs, 'deploy', 2) ?? '';
   for (const [name, job] of [['verify', verify], ['deploy', deploy]]) {
-    if (block(job, 'permissions', 4) !== null) fail(`${name} must not broaden token permissions`);
     if (!/ref: refs\/tags\/\$\{\{ inputs\.tag \}\}/.test(job)) fail(`${name} must check out the caller's tag`);
   }
+  // Only verify reads the Actions API, for the caller's reproduction proof; deploy keeps the read-only default.
+  const verifyPermissions = block(verify, 'permissions', 4);
+  if (verifyPermissions === null || !sameList(verifyPermissions.split('\n').filter((line) => line.trim()).map((line) => line.trim()), ['actions: read', 'contents: read'])) {
+    fail('verify permissions must be exactly actions: read and contents: read');
+  }
+  if (block(deploy, 'permissions', 4) !== null) fail('deploy must not broaden token permissions');
+  if (/github\.token|secrets\.GITHUB_TOKEN/.test(deploy)) fail('deploy must not read the GitHub token');
+  if (/continue-on-error/.test(source)) fail('no step or job may continue on error');
+  if (/^ {6,}(?:- )?if:/m.test(jobs)) fail('no step may be skipped conditionally');
 
   // Pinned, GitHub-owned actions only; no nested reusable or local workflow.
   const uses = [...source.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)].map((match) => match[1]);
@@ -95,17 +109,21 @@ export function validateDeployWorkflow(source) {
   }
   if (/secrets\.CLOUDFLARE_ACCOUNT_ID\b/.test(source)) fail('CLOUDFLARE_ACCOUNT_ID is a registry variable; read vars.CLOUDFLARE_ACCOUNT_ID, never secrets.CLOUDFLARE_ACCOUNT_ID');
 
-  // Tag identity, source checks and conformance, in order, before the deploy job can start.
+  // Tag identity, the caller's reproduction proof and conformance, in order, before the deploy job can start.
   if (!inOrder(verify, [
     /git cat-file -t "refs\/tags\/\$RELEASE_TAG"\)" = tag \]/,
     /git rev-parse "refs\/tags\/\$RELEASE_TAG\^\{commit\}"\)" = "\$EXPECTED_SHA" \]/,
     /\[ "\$\(git rev-parse HEAD\)" = "\$EXPECTED_SHA" \]/,
     /\[ "v\$version" = "\$RELEASE_TAG" \]/,
-    /run: npm ci$/m,
-    /run: npm run check$/m,
+    /git merge-base --is-ancestor "\$EXPECTED_SHA" refs\/remotes\/origin\/main/,
+    /^ {10}GITHUB_TOKEN: \$\{\{ github\.token \}\}\n {8}run: node platform\/deploy\/verify\.mjs evidence --worker "\$WORKER" --tag "\$RELEASE_TAG" --commit "\$EXPECTED_SHA"$/m,
     /run: node platform\/conformance\/cli\.mjs pin$/m,
     /run: node platform\/conformance\/cli\.mjs wrangler --worker "\$WORKER"$/m,
-  ])) fail('verify must bind the annotated tag to package.json and the commit, then run npm ci, npm run check, pin and wrangler conformance');
+  ])) fail('verify must bind the annotated tag to package.json and the commit on main, prove the caller\'s reproduction, then run pin and wrangler conformance');
+  // The caller already reproduced the tag; verify never runs the suite, installs or builds again, and has no fallback.
+  if (runCommands(verify).some((command) => /\bnpm\s+(?:ci|install|run|test|exec)\b|\bnpx\b|node_modules/.test(command))) {
+    fail('verify must not install, build, test or run wrangler; the caller\'s reproduction job is the only acceptance run');
+  }
 
   // The deploy job rebinds the tag, deploys with provisioning off, then proves 100% traffic and the public identity.
   const deployCommands = runCommands(deploy).join('\n');
@@ -119,10 +137,15 @@ export function validateDeployWorkflow(source) {
     /\[ "\$\(git rev-parse "refs\/tags\/\$RELEASE_TAG\^\{commit\}"\)" = "\$EXPECTED_SHA" \]/,
     /\[ "\$\(git rev-parse HEAD\)" = "\$EXPECTED_SHA" \]/,
     /^npm ci$/m,
+    /^WG_VERSION="\$\{RELEASE_TAG#v\}" WG_COMMIT="\$EXPECTED_SHA" npm run build --if-present$/m,
     /wrangler deploy /,
     /wrangler deployments status --name "\$WORKER" --json/,
     /node platform\/deploy\/verify\.mjs traffic --worker "\$WORKER"/,
-    /node platform\/deploy\/verify\.mjs version --worker "\$WORKER" --version "\$\{RELEASE_TAG#v\}" --commit "\$EXPECTED_SHA"/,
-  ])) fail('deploy must rebind the tag, deploy, confirm 100% traffic and then poll /version.json for the tag identity');
+    /node platform\/deploy\/verify\.mjs observe --worker "\$WORKER" --tag "\$RELEASE_TAG" --commit "\$EXPECTED_SHA" --deploy-output "\$RUNNER_TEMP\/wrangler-deploy\.ndjson" --status "\$RUNNER_TEMP\/wrangler-deployment-status\.json" --result "\$RUNNER_TEMP\/deploy-result\.json"$/m,
+    /^echo "result=\$\(cat "\$RUNNER_TEMP\/deploy-result\.json"\)" >> "\$GITHUB_OUTPUT"$/m,
+  ])) fail('deploy must rebind the tag, build with WG_VERSION and WG_COMMIT, deploy, confirm 100% traffic, then observe production and export its result');
+  if (!/^ {4}outputs:\n {6}result: \$\{\{ steps\.observe\.outputs\.result \}\}$/m.test(deploy) || !/^ {8}id: observe$/m.test(deploy)) {
+    fail('deploy must export result only from its observe step');
+  }
   return failures;
 }
