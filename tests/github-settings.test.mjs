@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   compareGithubSettings,
-  configuredMergeMethods,
   githubApi,
   loadExpectedSettings,
   rulesetPayload,
@@ -30,13 +29,13 @@ function actual() {
       conditions: { ref_name: { include: ruleset.include, exclude: [] } },
       rules: ruleset.rules.map((type) => {
         if (type === "pull_request") {
-          return { type, parameters: { allowed_merge_methods: configuredMergeMethods(expected) } };
+          return { type, parameters: { allowed_merge_methods: ruleset.allowedMergeMethods } };
         }
         if (type === "required_status_checks") {
           return {
             type,
             parameters: {
-              required_status_checks: expected.requiredStatusChecks.map((context) => ({ context })),
+              required_status_checks: ruleset.requiredStatusChecks.map((context) => ({ context })),
               strict_required_status_checks_policy: ruleset.requireBranchUpToDate === true,
             },
           };
@@ -60,7 +59,7 @@ test("matching configuration passes", () => {
 test("disabled squash or unexpected merge/rebase support fails", () => {
   assert.match(failuresFor((state) => { state.repository.allow_squash_merge = false; }), /squash merges/);
   assert.match(failuresFor((state) => { state.repository.allow_merge_commit = true; }), /merge commits/);
-  assert.match(failuresFor((state) => { state.repository.allow_rebase_merge = true; }), /rebase merges/);
+  assert.match(failuresFor((state) => { state.repository.allow_rebase_merge = false; }), /rebase merges/);
 });
 
 test("repository identity and automatic branch deletion cannot drift", () => {
@@ -86,14 +85,22 @@ test("disabled immutable Releases may be reported as HTTP 404", async () => {
   assert.equal(result, null);
 });
 
-test("ruleset merge methods must match squash-only authority", () => {
+test("ruleset merge methods must match each branch ruleset's authority", () => {
   assert.match(
     failuresFor((state) => {
       const branch = state.rulesets.find((ruleset) => ruleset.target === "branch");
       const pull = branch.rules.find((rule) => rule.type === "pull_request");
       pull.parameters.allowed_merge_methods = ["merge"];
     }),
-    /pull request merge methods must match the committed contract/,
+    /main-protection: pull request merge methods must match the committed contract \(rebase\)/,
+  );
+  assert.match(
+    failuresFor((state) => {
+      const release = state.rulesets.find((ruleset) => ruleset.name === "release-branch-protection");
+      const pull = release.rules.find((rule) => rule.type === "pull_request");
+      pull.parameters.allowed_merge_methods = ["rebase"];
+    }),
+    /release-branch-protection: pull request merge methods must match the committed contract \(squash\)/,
   );
 });
 
@@ -125,36 +132,47 @@ test("unexpected ruleset bypass actor fails", () => {
   );
 });
 
-test("main protection requires the branch to be current with main", () => {
+test("main protection requires the branch to be current with its base", () => {
   assert.match(
     failuresFor((state) => {
       const branch = state.rulesets.find((ruleset) => ruleset.target === "branch");
       const checks = branch.rules.find((rule) => rule.type === "required_status_checks");
       checks.parameters.strict_required_status_checks_policy = false;
     }),
-    /must be current with main/,
+    /main-protection: required status checks must be current with the base branch/,
   );
 });
 
-test("main ruleset payload requires PRs, squash-only merges, CI, and no bypass actors", () => {
-  const main = expected.rulesets.find((ruleset) => ruleset.target === "branch");
-  const payload = rulesetPayload(expected, main);
+test("main ruleset payload requires PRs, rebase-only linear merges, CI, and no bypass actors", () => {
+  const main = expected.rulesets.find((ruleset) => ruleset.name === "main-protection");
+  const payload = rulesetPayload(main);
   const pull = payload.rules.find((rule) => rule.type === "pull_request");
   const checks = payload.rules.find((rule) => rule.type === "required_status_checks");
   assert.deepEqual(payload.bypass_actors, main.bypassActors);
   assert.equal(checks.parameters.strict_required_status_checks_policy, true);
-  assert.deepEqual(pull.parameters.allowed_merge_methods, ["squash"]);
-  assert.deepEqual(
-    checks.parameters.required_status_checks,
-    expected.requiredStatusChecks.map((context) => ({ context })),
-  );
+  assert.deepEqual(pull.parameters.allowed_merge_methods, ["rebase"]);
+  assert.deepEqual(checks.parameters.required_status_checks, [{ context: "verify" }, { context: "change-id" }, { context: "security" }]);
   assert.ok(payload.rules.some((rule) => rule.type === "deletion"));
   assert.ok(payload.rules.some((rule) => rule.type === "non_fast_forward"));
+  assert.ok(payload.rules.some((rule) => rule.type === "required_linear_history"));
+});
+
+test("release branch payload squashes behind gate and change-id and leaves deletion to auto-delete", () => {
+  const release = expected.rulesets.find((ruleset) => ruleset.name === "release-branch-protection");
+  const payload = rulesetPayload(release);
+  const pull = payload.rules.find((rule) => rule.type === "pull_request");
+  const checks = payload.rules.find((rule) => rule.type === "required_status_checks");
+  assert.deepEqual(payload.conditions.ref_name.include, ["refs/heads/release/*"]);
+  assert.deepEqual(payload.bypass_actors, []);
+  assert.equal(checks.parameters.strict_required_status_checks_policy, true);
+  assert.deepEqual(pull.parameters.allowed_merge_methods, ["squash"]);
+  assert.deepEqual(checks.parameters.required_status_checks, [{ context: "gate" }, { context: "change-id" }]);
+  assert.equal(payload.rules.some((rule) => rule.type === "deletion"), false);
 });
 
 test("release tag payload blocks updates and deletion", () => {
   const tags = expected.rulesets.find((ruleset) => ruleset.target === "tag");
-  const payload = rulesetPayload(expected, tags);
+  const payload = rulesetPayload(tags);
   assert.deepEqual(payload.rules.map((rule) => rule.type).sort(), ["deletion", "update"]);
 });
 

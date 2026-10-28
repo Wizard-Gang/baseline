@@ -32,14 +32,6 @@ function statusContexts(ruleset) {
   return valuesOf(rule?.parameters?.required_status_checks).map((check) => check.context);
 }
 
-export function configuredMergeMethods(expected) {
-  const methods = [];
-  if (expected.mergeMethods.mergeCommit) methods.push("merge");
-  if (expected.mergeMethods.squash) methods.push("squash");
-  if (expected.mergeMethods.rebase) methods.push("rebase");
-  return methods;
-}
-
 export function compareGithubSettings(expected, actual) {
   const failures = [];
   const repository = actual?.repository;
@@ -72,8 +64,6 @@ export function compareGithubSettings(expected, actual) {
     failures.push("repository rulesets are inaccessible or missing");
     return failures;
   }
-
-  const expectedMergeMethods = configuredMergeMethods(expected);
 
   for (const expectedRuleset of expected.rulesets) {
     const actualRuleset = rulesets.find((ruleset) => ruleset.name === expectedRuleset.name);
@@ -115,26 +105,27 @@ export function compareGithubSettings(expected, actual) {
     }
 
     if (expectedRuleset.target === "branch") {
+      // Each branch ruleset names its own merge method and checks: rebase into main, squash into release/*.
       const pullRequest = ruleMap.get("pull_request");
       const allowedMergeMethods = pullRequest?.parameters?.allowed_merge_methods;
-      if (!sameValues(allowedMergeMethods, expectedMergeMethods)) {
+      if (!sameValues(allowedMergeMethods, expectedRuleset.allowedMergeMethods)) {
         failures.push(
-          `${expectedRuleset.name}: pull request merge methods must match the committed contract (${expectedMergeMethods.join(", ")})`,
+          `${expectedRuleset.name}: pull request merge methods must match the committed contract (${expectedRuleset.allowedMergeMethods.join(", ")})`,
         );
       }
 
       const checks = ruleMap.get("required_status_checks");
       const contexts = statusContexts(actualRuleset);
-      if (!sameValues(contexts, expected.requiredStatusChecks)) {
+      if (!sameValues(contexts, expectedRuleset.requiredStatusChecks)) {
         failures.push(
-          `${expectedRuleset.name}: required status checks do not match ${expected.requiredStatusChecks.join(", ")}`,
+          `${expectedRuleset.name}: required status checks do not match ${expectedRuleset.requiredStatusChecks.join(", ")}`,
         );
       }
       if (
         expectedRuleset.requireBranchUpToDate === true
         && checks?.parameters?.strict_required_status_checks_policy !== true
       ) {
-        failures.push(`${expectedRuleset.name}: required status checks must be current with main`);
+        failures.push(`${expectedRuleset.name}: required status checks must be current with the base branch`);
       }
     }
   }
@@ -142,13 +133,13 @@ export function compareGithubSettings(expected, actual) {
   return failures;
 }
 
-export function rulesetPayload(expected, ruleset) {
+export function rulesetPayload(ruleset) {
   const rules = ruleset.rules.map((type) => {
     if (type === "pull_request") {
       return {
         type,
         parameters: {
-          allowed_merge_methods: configuredMergeMethods(expected),
+          allowed_merge_methods: ruleset.allowedMergeMethods,
           dismiss_stale_reviews_on_push: false,
           require_code_owner_review: false,
           require_last_push_approval: false,
@@ -162,7 +153,7 @@ export function rulesetPayload(expected, ruleset) {
         type,
         parameters: {
           do_not_enforce_on_create: true,
-          required_status_checks: expected.requiredStatusChecks.map((context) => ({ context })),
+          required_status_checks: ruleset.requiredStatusChecks.map((context) => ({ context })),
           strict_required_status_checks_policy: ruleset.requireBranchUpToDate === true,
         },
       };

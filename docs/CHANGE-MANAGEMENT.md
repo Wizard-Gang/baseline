@@ -2,8 +2,6 @@
 
 This is the canonical way `baseline` accepts and merges a change; [AGENTS.md](../AGENTS.md) is the shared portfolio contract it implements. Every delivered task gets one permanent `BASE-###` ID, and a `[PLAN]` change takes none. The root `BASE-001` bootstrap commit precedes provider protection; every later change follows the controlled PR path. GitHub's merged PRs, checks and Releases are the only delivery record.
 
-Transition: until BASE-043 lands, baseline's own workflows, rulesets and `change-id` still take every PR straight into `main`, with contiguous IDs and no `[PLAN]` title.
-
 ## Authority and sequence
 
 Fetch `main` and the open release branch, inspect open PRs and current CI, then read `implementation_plan.md`. Its first open task is next. A delivering PR removes its own task, and the last one leaves the tracked empty template. A blocked task stays first until its prerequisite is resolved or a plan edit reorders the queue. Do not start a duplicate PR.

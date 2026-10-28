@@ -59,7 +59,7 @@ export const TOKEN_SCRIPTS = Object.freeze({
 });
 
 // Baseline's workflows: its own CI and release path, plus the reusable deploy that only consumers call.
-export const WORKFLOWS = Object.freeze(['ci.yml', 'deploy-worker.yml', 'release-cutter.yml', 'release.yml']);
+export const WORKFLOWS = Object.freeze(['deploy-worker.yml', 'release-cutter.yml', 'release.yml', 'verify.yml']);
 
 export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, lock, phase, provider }) {
   const failures = [];
@@ -75,7 +75,7 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
   if (pkg.scripts?.['audit:dependencies'] !== 'npm audit --audit-level=high') {
     failures.push('dependency advisory gate must fail on high-severity advisories');
   }
-  for (const name of ['check', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare', 'vendor:lock', ...Object.keys(TOKEN_SCRIPTS)]) {
+  for (const name of ['check', 'check:gate', 'check:change', 'check:release', 'check:patch', 'check:workflow-shell', 'test:plan-queue', 'test:github-settings', 'verify:github-settings', 'apply:github-settings', 'verify:cloudflare', 'vendor:lock', ...Object.keys(TOKEN_SCRIPTS)]) {
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
   }
   if (pkg.scripts?.['vendor:lock'] !== 'node scripts/vendor-lock.mjs') {
@@ -113,21 +113,38 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
     if (pkg[field]?.wrangler) failures.push('baseline must not depend on wrangler');
   }
 
+  // Agents run no tests, so the fast gate must not either; verify runs the full suite.
+  if (/node --test|npm (?:run )?test|npm run check(?:\s|$|&)/.test(pkg.scripts?.['check:gate'] ?? '')) {
+    failures.push('check:gate runs only the non-test checks');
+  }
   const ciEvents = keys(block(ci, 'on'), 2);
-  if (!sameSet(ciEvents, ['pull_request', 'push'])) failures.push('CI must trigger only on PR and main push');
+  if (!sameSet(ciEvents, ['pull_request', 'push', 'workflow_dispatch'])) {
+    failures.push('CI must trigger only on PR, main push and an exact-head dispatch');
+  }
   requireMatch(failures, 'CI must rerun when PR title or body is edited', block(ci, 'pull_request', 2), /types: \[[^\]]*edited[^\]]*\]/);
+  requireMatch(failures, 'CI PR targets must be main and release branches', block(ci, 'pull_request', 2), /^    branches: \[main, 'release\/\*\*'\]$/m);
   requireMatch(failures, 'CI push target must be main', block(ci, 'push', 2), /^    branches: \[main\]$/m);
   if (block(ci, 'permissions')?.trim() !== 'contents: read') failures.push('CI default token must be read-only');
   requireMatch(failures, 'CI must cancel only in-progress PR runs', block(ci, 'concurrency'), /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   const ciJobs = keys(block(ci, 'jobs'), 2);
-  if (!sameSet(ciJobs, ['verify', 'change-id', 'security'])) failures.push('CI must expose verify, change-id, security required jobs');
+  if (!sameSet(ciJobs, ['verify', 'gate', 'change-id', 'security'])) failures.push('CI must expose verify, gate, change-id, security required jobs');
   for (const job of ciJobs) {
     const contents = block(ci, job, 2);
     requireMatch(failures, `${job} must check out the exact PR head`, contents,
       /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
     if (block(contents, 'permissions', 4)) failures.push(`${job} must not broaden token permissions`);
   }
-  requireMatch(failures, 'verify must run the complete local contract', block(ci, 'verify', 2), /run: npm run check/);
+  // A task or [PLAN] PR into release/* runs gate; the release PR into main, main pushes and dispatches run verify.
+  const fullSuite = /^    if: github\.event_name != 'pull_request' \|\| github\.base_ref == 'main'$/m;
+  requireMatch(failures, 'verify must skip only task PRs into release branches', block(ci, 'verify', 2), fullSuite);
+  requireMatch(failures, 'security must skip only task PRs into release branches', block(ci, 'security', 2), fullSuite);
+  requireMatch(failures, 'gate must run only on task PRs into release branches', block(ci, 'gate', 2),
+    /^    if: github\.event_name == 'pull_request' && github\.base_ref != 'main'$/m);
+  requireMatch(failures, 'change-id must run on every PR and main push', block(ci, 'change-id', 2),
+    /^    if: github\.event_name != 'workflow_dispatch'$/m);
+  requireMatch(failures, 'gate must run the non-test checks', block(ci, 'gate', 2), /run: npm run check:gate$/m);
+  requireMatch(failures, 'gate must check the committed PR patch', block(ci, 'gate', 2), /run: npm run check:patch/);
+  requireMatch(failures, 'verify must run the complete local contract', block(ci, 'verify', 2), /run: npm run check$/m);
   requireMatch(failures, 'verify must check the committed PR patch', block(ci, 'verify', 2), /run: npm run check:patch/);
   requireMatch(failures, 'change-id must validate exact PR identity', block(ci, 'change-id', 2), /run: npm run check:change/);
   requireMatch(failures, 'security must run the dependency advisory gate', block(ci, 'security', 2), /run: npm run audit:dependencies/);
@@ -178,19 +195,31 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
   for (const match of `${ci}\n${release}\n${cutter}`.matchAll(/\bnpm run ([\w:-]+)/g)) {
     if (!pkg.scripts?.[match[1]]) failures.push(`workflow references missing package script ${match[1]}`);
   }
-  const requiredChecks = provider?.requiredStatusChecks;
-  if (!sameSet(requiredChecks ?? [], ciJobs)) failures.push('provider required checks must match CI job names');
+  const main = provider?.rulesets?.find((rule) => rule.name === 'main-protection');
+  const releases = provider?.rulesets?.find((rule) => rule.name === 'release-branch-protection');
+  const tags = provider?.rulesets?.find((rule) => rule.target === 'tag');
+  const requiredChecks = [...new Set([...(main?.requiredStatusChecks ?? []), ...(releases?.requiredStatusChecks ?? [])])];
+  if (!sameSet(requiredChecks, ciJobs)) failures.push('provider required checks must match CI job names');
   if (provider?.repository !== 'Wizard-Gang/baseline' || provider?.defaultBranch !== 'main'
       || provider?.mergeMethods?.mergeCommit !== false || provider?.mergeMethods?.squash !== true
-      || provider?.mergeMethods?.rebase !== false || provider?.deleteBranchOnMerge !== true
-      || provider?.allowAutoMerge !== true) {
-    failures.push('provider must enforce the committed squash-only baseline');
+      || provider?.mergeMethods?.rebase !== true || provider?.deleteBranchOnMerge !== true
+      || provider?.allowAutoMerge !== true || Object.hasOwn(provider ?? {}, 'requiredStatusChecks')) {
+    failures.push('provider must allow only squash and rebase merges, with checks set per ruleset');
   }
-  const main = provider?.rulesets?.find((rule) => rule.target === 'branch');
-  const tags = provider?.rulesets?.find((rule) => rule.target === 'tag');
-  if (main?.enforcement !== 'active' || main?.requireBranchUpToDate !== true
-      || main?.bypassActors?.length !== 0 || !sameSet(main?.rules ?? [], ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks'])) {
-    failures.push('main ruleset must protect current main with no bypass actors');
+  if (provider?.rulesets?.length !== 3 || main?.target !== 'branch' || releases?.target !== 'branch') {
+    failures.push('provider must define exactly the main, release-branch and release-tag rulesets');
+  }
+  if (main?.enforcement !== 'active' || main?.requireBranchUpToDate !== true || main?.bypassActors?.length !== 0
+      || !sameSet(main?.include ?? [], ['refs/heads/main']) || !sameSet(main?.allowedMergeMethods ?? [], ['rebase'])
+      || !sameSet(main?.requiredStatusChecks ?? [], ['verify', 'change-id', 'security'])
+      || !sameSet(main?.rules ?? [], ['deletion', 'non_fast_forward', 'pull_request', 'required_linear_history', 'required_status_checks'])) {
+    failures.push('main ruleset must take only a rebase-merged release PR with green verify, change-id and security');
+  }
+  if (releases?.enforcement !== 'active' || releases?.requireBranchUpToDate !== true || releases?.bypassActors?.length !== 0
+      || !sameSet(releases?.include ?? [], ['refs/heads/release/*']) || !sameSet(releases?.allowedMergeMethods ?? [], ['squash'])
+      || !sameSet(releases?.requiredStatusChecks ?? [], ['gate', 'change-id'])
+      || !sameSet(releases?.rules ?? [], ['non_fast_forward', 'pull_request', 'required_status_checks'])) {
+    failures.push('release branch ruleset must take only squashed task PRs with green gate and change-id');
   }
   if (tags?.enforcement !== 'active' || tags?.bypassActors?.length !== 0
       || !sameSet(tags?.include ?? [], ['refs/tags/v*']) || !sameSet(tags?.rules ?? [], ['deletion', 'update'])) {
@@ -261,7 +290,7 @@ export function validateRepositoryAt(root) {
   failures.push(...validateMigrationsAt(root).map((failure) => `migrations: ${failure}`));
   failures.push(...validateSecretRegistryAt(root).map((failure) => `config/secrets.json: ${failure}`));
   return [...failures, ...validateRepositoryContract({
-    ci: read('.github/workflows/ci.yml'),
+    ci: read('.github/workflows/verify.yml'),
     release: read('.github/workflows/release.yml'),
     cutter: read('.github/workflows/release-cutter.yml'),
     deploy: read(DEPLOY_WORKFLOW),

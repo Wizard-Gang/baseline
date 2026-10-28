@@ -54,7 +54,8 @@ test('no-tests denies agent test runs in enabled repositories through every shel
   assert.equal(run('gh run watch 1 --exit-status'), 'none');
   assert.equal(run("cat > notes.md <<'EOF'\nnpm test\nEOF"), 'none', 'heredoc bodies are ignored');
   assert.equal(run('MAPLAB_ALLOW_TESTS=1 npm test'), 'none', 'the owner bypass');
-  assert.equal(run('npm test', 'Bash', repo('Wizard-Gang/baseline')), 'none', 'repositories outside no-tests.json');
+  assert.equal(run('npm test', 'Bash', repo('Wizard-Gang/WizardGang')), 'none', 'repositories outside no-tests.json');
+  assert.equal(run('npm run check', 'Bash', repo('Wizard-Gang/baseline')), 'deny', 'baseline follows its own CI-only contract');
   const reason = hook(join(hooks, 'no-tests.mjs'), { tool_name: 'Bash', cwd: maplab, tool_input: { command: 'npm test' } }, home).permissionDecisionReason;
   assert.match(reason, /MAPLAB_ALLOW_TESTS=1/);
 });

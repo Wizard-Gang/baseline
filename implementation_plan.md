@@ -4,16 +4,6 @@
 
 **Highest ID ever used:** BASE-044.
 
-### BASE-043 — [OPS] Deliver baseline itself through release branches with CI-only tests
-
-- Dependency: BASE-042.
-- Why: the BASE-042 contract makes release branches and CI-only tests the default, and baseline should follow its own contract.
-- Scope: a fast `gate` check on task PRs into `release/*` and the full suite as `verify` on the release PR into `main`, with a `config/release.json` naming the open release branch. Rulesets for `release/*` and `main` in `config/github-repository-settings.json` follow, and `scripts/check-change.mjs` accepts task and `[PLAN]` PRs into the open release branch, takes its queue rules from `validateQueueEdit` in `scripts/check-portfolio-contract.mjs`, and accepts `[PLAN]` commits and non-contiguous IDs in main's history. `docs/CHANGE-MANAGEMENT.md` drops its transition note. The tag cut and Release dispatch move to after the release PR's rebase merge. `Wizard-Gang/baseline` joins `agent/hooks/no-tests.json` once `verify` runs every test.
-- Non-goals: no change to `deploy-worker.yml`'s caller contract, `platform/`, Cloudflare, secrets or any consumer.
-- Acceptance: a task PR into the open release branch merges on green `gate` alone. A release PR merges by rebase only after green exact-head `verify`. A tag is cut only from `main` after a release. Live rulesets read back equal to the committed settings. `npm run check` passes.
-- Validation: Pinned `npm ci`, focused change-contract, release-contract, repository-contract and github-settings tests, `npm run check`, `npm run audit:dependencies`, `check:patch`, `git diff --check`, exact-head CI, and `npm run verify:github-settings` after the owner applies the settings.
-- Authorities: `.github/workflows/`, `config/github-repository-settings.json`, `scripts/check-change.mjs`, `scripts/change-contract.mjs`, `scripts/check-portfolio-contract.mjs`, `scripts/release-contract.mjs`, `docs/CHANGE-MANAGEMENT.md`, `docs/RELEASE-MANAGEMENT.md`, and the labs' `config/release.json` and gate workflows.
-
 ### BASE-044 — [OPS] Add the typecheck Stop hook and the never-rules guard for both agents
 
 - Dependency: None. It builds on the tracked hooks and `link:agent` from BASE-041.

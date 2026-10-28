@@ -4,16 +4,11 @@
   "mergeMethods": {
     "mergeCommit": false,
     "squash": true,
-    "rebase": false
+    "rebase": true
   },
   "allowAutoMerge": true,
   "deleteBranchOnMerge": true,
   "immutableReleases": true,
-  "requiredStatusChecks": [
-    "verify",
-    "change-id",
-    "security"
-  ],
   "rulesets": [
     {
       "name": "main-protection",
@@ -24,8 +19,39 @@
       ],
       "bypassActors": [],
       "requireBranchUpToDate": true,
+      "allowedMergeMethods": [
+        "rebase"
+      ],
+      "requiredStatusChecks": [
+        "verify",
+        "change-id",
+        "security"
+      ],
       "rules": [
         "deletion",
+        "non_fast_forward",
+        "pull_request",
+        "required_linear_history",
+        "required_status_checks"
+      ]
+    },
+    {
+      "name": "release-branch-protection",
+      "target": "branch",
+      "enforcement": "active",
+      "include": [
+        "refs/heads/release/*"
+      ],
+      "bypassActors": [],
+      "requireBranchUpToDate": true,
+      "allowedMergeMethods": [
+        "squash"
+      ],
+      "requiredStatusChecks": [
+        "gate",
+        "change-id"
+      ],
+      "rules": [
         "non_fast_forward",
         "pull_request",
         "required_status_checks"
