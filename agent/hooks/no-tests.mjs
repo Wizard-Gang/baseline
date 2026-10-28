@@ -132,7 +132,7 @@ function runsTests(tokens, scripts, seen = new Set()) {
   return false;
 }
 
-function repoOf(dir) {
+export function repoOf(dir) {
   try {
     const url = execFileSync('git', ['-C', dir, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const top = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -143,7 +143,7 @@ function repoOf(dir) {
   }
 }
 
-function commandOf(input) {
+export function commandOf(input) {
   const value = input?.command ?? input?.cmd ?? input?.argv;
   if (Array.isArray(value)) {
     const shell = value.findIndex((token) => /^-\w*c$/.test(token));

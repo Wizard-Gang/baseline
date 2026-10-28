@@ -330,6 +330,13 @@ test('CLI checks a task PR into the release branch and a local release branch as
   git(root, 'branch', 'release/r001');
 
   git(root, 'switch', '-q', '-c', 'base-002-prove-process-contract');
+  // A task that empties the queue leaves the shared template byte for byte, final newline included.
+  writeFileSync(join(root, 'implementation_plan.md'), emptyPlan());
+  writeFileSync(join(root, 'config/release.json'), JSON.stringify(r001('BASE-002'), null, 2) + '\n');
+  commit(root, '[BASE-002] [TEST] Prove process contract', body());
+  const emptied = command(root, process.execPath, ['scripts/check-change.mjs']);
+  assert.equal(emptied.status, 0, emptied.stderr);
+  git(root, 'reset', '-q', '--hard', 'release/r001');
   writeFileSync(join(root, 'implementation_plan.md'), plan(3));
   writeFileSync(join(root, 'config/release.json'), JSON.stringify(r001('BASE-002'), null, 2) + '\n');
   const title = '[BASE-002] [TEST] Prove process contract';
