@@ -230,6 +230,10 @@ export function validateRepositoryAt(root) {
     'docs/CLOUDFLARE-RUNBOOK.md', 'tests/cloudflare-runbook.test.mjs', 'tests/fixtures/runbook.mjs',
     'docs/SECRETS-RUNBOOK.md', 'tests/secrets-runbook.test.mjs',
     'config/secrets.json', 'scripts/secret-registry.mjs', 'tests/secret-registry.test.mjs',
+    ...['no-tests.mjs', 'no-tests.json', 'context-budget.mjs', 'context-budget.json', 'rulebook-cap.mjs', 'README.md']
+      .map((file) => `agent/hooks/${file}`),
+    'agent/RULEBOOK.md', 'agent/RULEBOOK-WHY.md', 'agent/claude/agents/lab-reviewer.md',
+    'scripts/link-agent.mjs', 'tests/agent-tooling.test.mjs',
   ];
   const failures = [];
   for (const path of required) {

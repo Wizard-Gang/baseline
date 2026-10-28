@@ -24,6 +24,7 @@
     "rotate:cloudflare-token": "node scripts/rotate-cloudflare-token.mjs",
     "test:plan-queue": "node scripts/check-portfolio-contract.mjs",
     "test:github-settings": "node --test tests/github-settings.test.mjs",
-    "vendor:lock": "node scripts/vendor-lock.mjs"
+    "vendor:lock": "node scripts/vendor-lock.mjs",
+    "link:agent": "node scripts/link-agent.mjs"
   }
 }
