@@ -11,6 +11,7 @@
   "packageManager": "npm@12.1.0",
   "scripts": {
     "check": "npm run test:plan-queue && npm run check:workflow-shell && node --test tests/*.test.mjs && node scripts/check-repository.mjs && node scripts/check-change.mjs",
+    "check:gate": "node scripts/check-portfolio-contract.mjs && npm run check:workflow-shell && npm run check:repository",
     "check:workflow-shell": "node scripts/check-workflow-shell.mjs",
     "check:change": "node scripts/check-change.mjs",
     "check:repository": "node scripts/check-repository.mjs",

@@ -38,7 +38,7 @@ try {
 
   const existing = await githubApi(`${root}/rulesets`, { token });
   for (const expectedRuleset of expected.rulesets) {
-    const payload = rulesetPayload(expected, expectedRuleset);
+    const payload = rulesetPayload(expectedRuleset);
     const current = existing.find((ruleset) => ruleset.name === expectedRuleset.name);
     if (current) {
       await githubApi(`${root}/rulesets/${current.id}`, {

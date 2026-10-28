@@ -11,7 +11,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const specimen = () => ({
-  ci: read('.github/workflows/ci.yml'),
+  ci: read('.github/workflows/verify.yml'),
   release: read('.github/workflows/release.yml'),
   cutter: read('.github/workflows/release-cutter.yml'),
   deploy: read('.github/workflows/deploy-worker.yml'),
@@ -42,6 +42,45 @@ test('broader CI token and missing security check fail the provider contract', (
   assert.ok(failures.some((failure) => failure.includes('read-only')));
   assert.ok(failures.some((failure) => failure.includes('required jobs')));
   assert.ok(failures.some((failure) => failure.includes('provider required checks')));
+});
+
+test('task PRs into release branches run the non-test gate and the release PR runs verify', () => {
+  const contains = (input, text) => validateRepositoryContract(input).some((failure) => failure.includes(text));
+  let input = specimen();
+  input.pkg.scripts['check:gate'] = `${input.pkg.scripts['check:gate']} && node --test tests/*.test.mjs`;
+  assert.ok(contains(input, 'check:gate runs only the non-test checks'));
+  input = specimen();
+  input.ci = input.ci.replace("    if: github.event_name != 'pull_request' || github.base_ref == 'main'\n", '');
+  assert.ok(contains(input, 'verify must skip only task PRs into release branches'));
+  input = specimen();
+  input.ci = input.ci.replace("    if: github.event_name == 'pull_request' && github.base_ref != 'main'\n", '');
+  assert.ok(contains(input, 'gate must run only on task PRs into release branches'));
+  input = specimen();
+  input.ci = input.ci.replace("branches: [main, 'release/**']", 'branches: [main]');
+  assert.ok(contains(input, 'CI PR targets must be main and release branches'));
+  input = specimen();
+  input.ci = input.ci.replace('  workflow_dispatch:\n', '');
+  assert.ok(contains(input, 'exact-head dispatch'));
+});
+
+test('main takes only a rebase-merged release PR and release branches only squashed task PRs', () => {
+  const contains = (input, text) => validateRepositoryContract(input).some((failure) => failure.includes(text));
+  const ruleset = (input, name) => input.provider.rulesets.find((rule) => rule.name === name);
+  let input = specimen();
+  ruleset(input, 'main-protection').allowedMergeMethods = ['squash'];
+  assert.ok(contains(input, 'main ruleset must take only a rebase-merged release PR'));
+  input = specimen();
+  ruleset(input, 'main-protection').rules = ruleset(input, 'main-protection').rules.filter((rule) => rule !== 'required_linear_history');
+  assert.ok(contains(input, 'main ruleset must take only a rebase-merged release PR'));
+  input = specimen();
+  ruleset(input, 'release-branch-protection').requiredStatusChecks = ['verify', 'change-id'];
+  assert.ok(contains(input, 'release branch ruleset must take only squashed task PRs'));
+  input = specimen();
+  input.provider.rulesets = input.provider.rulesets.filter((rule) => rule.name !== 'release-branch-protection');
+  assert.ok(contains(input, 'exactly the main, release-branch and release-tag rulesets'));
+  input = specimen();
+  input.provider.requiredStatusChecks = ['verify', 'change-id', 'security'];
+  assert.ok(contains(input, 'checks set per ruleset'));
 });
 
 test('release publication cannot lose tag identity or attestation', () => {

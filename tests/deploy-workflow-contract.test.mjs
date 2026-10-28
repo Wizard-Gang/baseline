@@ -141,7 +141,7 @@ test('deploy builds the tag identity, confirms 100% traffic and then observes pr
 
 test('baseline never deploys: no other workflow, script, dependency or config reaches wrangler', (t) => {
   const specimen = () => ({
-    ci: read('.github/workflows/ci.yml'),
+    ci: read('.github/workflows/verify.yml'),
     release: read('.github/workflows/release.yml'),
     cutter: read('.github/workflows/release-cutter.yml'),
     deploy: workflow,
@@ -176,7 +176,7 @@ test('baseline never deploys: no other workflow, script, dependency or config re
   cpSync(root, copy, { recursive: true, filter: (source) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(relative(root, source)) });
   assert.deepEqual(validateRepositoryAt(copy), []);
   writeFileSync(join(copy, '.github/workflows/deploy-production.yml'), 'on:\n  push:\n');
-  assert.ok(validateRepositoryAt(copy).includes('workflows must be exactly ci.yml, deploy-worker.yml, release-cutter.yml, release.yml'));
+  assert.ok(validateRepositoryAt(copy).includes('workflows must be exactly deploy-worker.yml, release-cutter.yml, release.yml, verify.yml'));
   rmSync(join(copy, '.github/workflows/deploy-production.yml'));
   writeFileSync(join(copy, 'wrangler.jsonc'), '{}\n');
   assert.ok(validateRepositoryAt(copy).includes('baseline never deploys and must not carry wrangler.jsonc'));

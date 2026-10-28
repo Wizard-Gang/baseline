@@ -5,7 +5,7 @@ Machine-level PreToolUse guards shared by Claude Code and Codex. They are tracke
 | File | Role |
 | --- | --- |
 | `no-tests.mjs` | Denies agent test runs (vitest, playwright, node --test, `npm test`, any npm script that runs tests, e.g. `npm run check`). Heredoc bodies are ignored. Fails open. |
-| `no-tests.json` | Repos it applies to, by git `origin` (`owner/name`): RenderLab, RigLab, MapLab. |
+| `no-tests.json` | Repos it applies to, by git `origin` (`owner/name`): RenderLab, RigLab, MapLab, baseline. |
 | `context-budget.mjs` | Warns at 200k context, blocks work tools at 300k (`context-budget.json`). Writes `~/.agent-hooks/state/` and reads `~/.agent-hooks/context-budget.allow` from the home directory, never from the checkout. |
 | `rulebook-cap.mjs` | Keeps the owner rulebook (`agent/RULEBOOK.md`, linked as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`) under 700 words through either path. |
 
