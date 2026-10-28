@@ -234,6 +234,7 @@ export function validateRepositoryAt(root) {
       .map((file) => `agent/hooks/${file}`),
     'agent/RULEBOOK.md', 'agent/RULEBOOK-WHY.md', 'agent/claude/agents/lab-reviewer.md',
     'scripts/link-agent.mjs', 'tests/agent-tooling.test.mjs',
+    'scripts/check-portfolio-contract.mjs', 'tests/portfolio-contract.test.mjs', 'tests/fixtures/empty-plan.md',
   ];
   const failures = [];
   for (const path of required) {

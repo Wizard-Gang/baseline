@@ -4,9 +4,9 @@ This document maps each baseline control to its committed authority and the evid
 
 | Control | Committed authority | Verification |
 | --- | --- | --- |
-| Permanent current-only work queue | `implementation_plan.md`, `scripts/change-contract.mjs`, `scripts/check-portfolio-contract.mjs` | `npm run test:plan-queue`, `npm run check:change`; an empty queue selects no implementation task and the next instruction must fill it through a controlled plan-only change. |
+| Permanent current-only work queue | `implementation_plan.md`, `scripts/change-contract.mjs`, `scripts/check-portfolio-contract.mjs` | `npm run test:plan-queue`, `npm run check:change`; an empty queue selects no implementation task; any PR may edit the queue, a `[PLAN]` PR changes only the plan, and a new ID rises above the recorded highest ID ever used. |
 | Permanent controlled identity | `scripts/change-contract.mjs`, `docs/CHANGE-MANAGEMENT.md` | One sequential `BASE-###` ID, matching branch/PR/commit, structured body, one PR-range commit, and exactly one squash commit retained on `main`. |
-| Shared agent and contributor instructions | `AGENTS.md`, `CONTRIBUTING.md`, `scripts/check-portfolio-contract.mjs` | SHA-256 comparison with the published common contract hashes during `npm run check`. |
+| Shared agent and contributor instructions | `AGENTS.md`, `CONTRIBUTING.md`, `scripts/check-portfolio-contract.mjs` | SHA-256 comparison with the published common contract hashes, and `tests/portfolio-contract.test.mjs`, during `npm run check`. |
 | Toolchain and dependency lock | `.node-version`, `package.json`, `package-lock.json` | Node 26.10.0, npm 12.1.0, `npm ci`, repository contract tests. Dependency advisories run separately through `npm run audit:dependencies`. |
 | Credential-free local acceptance | `package.json`, `.github/workflows/ci.yml` | `npm run check` runs tests, source and policy validation, and controlled history without a GitHub token. |
 | Exact-head required CI | `.github/workflows/ci.yml`, `config/github-repository-settings.json` | `verify`, `change-id`, and `security` run on the exact PR head. `verify` checks the committed patch; `security` runs the separate advisory gate. All three are required and current with `main`. |

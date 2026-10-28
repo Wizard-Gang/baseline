@@ -32,6 +32,7 @@ Rules only, capped at 700 words; `~/.agent-hooks/rulebook-cap.mjs` refuses edits
 
 - Every tool call re-sends the whole session. Read by range (`grep -n`, `sed -n`), never re-read what you have, and send long output to a log and print only the tail.
 - At ~200k context, finish the current step, not the whole queue. At 300k, work tools are blocked: reach a recoverable point (commit, push or PR open), then hand off.
+- Split a task at "PR open": the CI wait, review, merge and post-merge checks start in a fresh session from a handoff.
 - A handoff is 25 lines or fewer: the task, branch/PR, owner rulings and the facts the next session cannot re-read. Write it to `~/Documents/handoffs/<repo>-<YYYY-MM-DD>.md` or use the app's hand-off. Split risky releases before handing off.
 - The override (`echo <session_id> >> ~/.agent-hooks/context-budget.allow`) is only for when the owner explicitly says to keep going.
 

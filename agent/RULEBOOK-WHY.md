@@ -14,4 +14,7 @@ Rules added 2026-10-25:
 - **Context budget 200k warn / 300k block**: Claude averaged 372k context per call and the "hand off" rule was ignored, with peaks of 965k. Jacob asked to turn it into a hook. See `usage-budget.md` in the memory folder above.
 - **Delivery via release branches** (replaced "Every PR ends merged, squash into main"): full CI cost 7–20 min and ran twice per task. Jacob ruled "Fast gate + on-demand", "Rebase, one per task", "Owner calls it" for releases, across all three labs, and OK'd the amendment on 2026-10-25. Details: `~/Documents/handoffs/labs-release-protocol.md`. Older why: `feedback-merge-every-pr.md`.
 
+Rules added 2026-10-28:
+- **Split at "PR open"** (from the labs' "Keep sessions cheap"): Jacob ruled every lab rule a portfolio default and the session-cost rules stated once, here (BASE-042). The labs' section duplicated "Session size" except for this split.
+
 **How to apply:** change a rule only with the owner. Keep the rulebook under the cap by replacing rules, and record each new rule's reason here.
