@@ -6,23 +6,6 @@
 
 Any PR may fill this queue; a `[PLAN]` PR that changes only this file is the usual way. A new task takes an ID above the highest one recorded here, which rises to it, so a removed ID is never reused. Keep this file tracked; do not delete it when the queue is empty.
 
-### BASE-046 — [OPS] Split the forked delivery scripts into a shared core and per-repository config
-
-- Dependency: BASE-045.
-- Why: On `origin/main` on 2026-10-29, `check-change.mjs` existed in four different versions across baseline and the three labs. `change-contract.mjs`, `check-portfolio-contract.mjs`, `repository-contract.mjs` and `github-repository-settings.mjs` existed in three, and `check-patch.mjs`, `release-contract.mjs` and `publish-release.mjs` in two. MapLab had none of the settings-as-code or patch scripts and ran its own `repository-policy.mjs`. Each lab's portfolio check pins its own `AGENTS.md`, although `AGENTS.md` says every repository carries it byte for byte from baseline.
-- Scope:
-  - Each forked script moves to `contract/` as one implementation. What legitimately differs per repository (ID prefix, last direct-to-main task, required check names, ruleset values, release workflow presence) comes from that repository's committed `config/` files.
-  - The vendored portfolio check pins baseline's `AGENTS.md`, `CONTRIBUTING.md` and empty plan template, so a consumer that drifts from them fails its own gate.
-  - Baseline runs the shared versions against its own config.
-  - `check-release.mjs`, which BASE-045 left in `scripts/` because `release.yml` runs it by path, moves to `contract/` with the `release-contract.mjs` it imports. `release.yml`'s paths to `check-release.mjs` and `publish-release.mjs` follow the move, and nothing else in the workflow changes.
-- Non-goals: no change to any rule the scripts enforce in baseline today. No consumer change; each lab adopts by its own task. No workflow change beyond `release.yml`'s two script paths (BASE-048).
-- Acceptance:
-  - Baseline's checks give the same decisions as before on its own history and config.
-  - Each lab's current rules are expressible in its config without code. Where one is not, the task names the difference for an owner ruling instead of forking again.
-  - `npm run check` passes in CI.
-- Validation: Pinned `npm ci`, `npm run check:gate`, `check:change`, `check:repository`, `check:patch`, `npm run audit:dependencies`, `git diff --check` and exact-head CI.
-- Authorities: the scripts named above in baseline and in each lab at its `origin/main`, each lab's `config/`, baseline's `.github/workflows/release.yml`, `AGENTS.md` and `docs/CHANGE-MANAGEMENT.md`.
-
 ### BASE-047 — [OPS] Host the dev launcher and let consumers track their launch config
 
 - Dependency: BASE-046, whose shared repository contract carries the `.claude/` rule.

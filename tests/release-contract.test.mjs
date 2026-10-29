@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 import {
   makeSha256Manifest, reconcileReleasePublication, validateReleaseIdentity,
   verifySha256Manifest,
-} from '../scripts/release-contract.mjs';
-import { observeReleaseIdentity } from '../scripts/check-release.mjs';
+} from '../contract/release-contract.mjs';
+import { observeReleaseIdentity } from '../contract/check-release.mjs';
 
 const SHA = 'a'.repeat(40);
 const OTHER_SHA = 'b'.repeat(40);
@@ -150,7 +150,7 @@ test('attestation CLI binds verifier to repository, workflow, tag ref, and sourc
     writeFileSync(artifactPath, artifact.bytes);
     writeFileSync(join(dir, 'gh'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_ARGS_LOG"\nprintf "[{\\"verificationResult\\":{}}]\\n"\n');
     chmodSync(join(dir, 'gh'), 0o755);
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/check-release.mjs', import.meta.url)),
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('../contract/check-release.mjs', import.meta.url)),
       'attestation', '--tag', 'v1.2.3', '--commit', SHA, '--repo', 'Wizard-Gang/baseline',
       '--signer-workflow', 'Wizard-Gang/baseline/.github/workflows/release.yml', '--artifact', artifactPath], {
       encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_ARGS_LOG: logPath },

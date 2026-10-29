@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
+import { DELIVERY } from './delivery-config.mjs';
 
 export const RELEASE_TAG = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 export const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -33,7 +34,7 @@ export function validateReleaseIdentity(observation) {
     ok: errors.length === 0,
     errors,
     identity: errors.length ? null : {
-      schema: 'baseline-release-identity/v1',
+      schema: `${DELIVERY.name}-release-identity/v1`,
       tag,
       version: packageVersion,
       commit: taggedCommit,

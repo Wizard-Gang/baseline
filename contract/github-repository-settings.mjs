@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { DELIVERY } from "./delivery-config.mjs";
 
 export const GITHUB_API_VERSION = "2026-03-10";
 
@@ -192,7 +193,7 @@ export async function githubApi(
       accept: "application/vnd.github+json",
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
-      "user-agent": "baseline-repository-settings",
+      "user-agent": `${DELIVERY.name}-repository-settings`,
       "x-github-api-version": GITHUB_API_VERSION,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
