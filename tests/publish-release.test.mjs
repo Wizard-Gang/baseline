@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
-import { makeSha256Manifest } from '../scripts/release-contract.mjs';
-import { parseApiResponse, publishRelease } from '../scripts/publish-release.mjs';
+import { makeSha256Manifest } from '../contract/release-contract.mjs';
+import { parseApiResponse, publishRelease } from '../contract/publish-release.mjs';
 
 const TAG = 'v1.2.3';
 const REPO = 'Wizard-Gang/baseline';

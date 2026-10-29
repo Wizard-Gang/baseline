@@ -97,7 +97,7 @@ jobs:
             [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ]
           fi
       - name: Reverify annotated tag identity
-        run: node scripts/check-release.mjs identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
+        run: node contract/check-release.mjs identity --tag "$GITHUB_REF_NAME" --main-ref refs/remotes/origin/main
       - name: Rebuild and compare clean-job digest
         id: archive
         shell: bash
@@ -112,8 +112,8 @@ jobs:
           git archive --format=tar --prefix="baseline-$GITHUB_REF_NAME/" "$GITHUB_REF_NAME" | gzip -n > "$archive"
           actual="$(sha256sum "$archive" | cut -d ' ' -f 1)"
           test "$actual" = "$EXPECTED_SHA256"
-          node scripts/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --write dist/SHA256SUMS
-          node scripts/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --manifest dist/SHA256SUMS
+          node contract/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --write dist/SHA256SUMS
+          node contract/check-release.mjs manifest --tag "$GITHUB_REF_NAME" --artifact "$archive" --manifest dist/SHA256SUMS
           echo "artifact=$archive" >> "$GITHUB_OUTPUT"
       - name: Attest reproduced archive
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
@@ -123,7 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          node scripts/check-release.mjs attestation
+          node contract/check-release.mjs attestation
           --tag "$GITHUB_REF_NAME"
           --commit "$GITHUB_SHA"
           --artifact "${{ steps.archive.outputs.artifact }}"
@@ -132,7 +132,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          node scripts/publish-release.mjs
+          node contract/publish-release.mjs
           --tag "$GITHUB_REF_NAME"
           --repo "$GITHUB_REPOSITORY"
           --artifact "${{ steps.archive.outputs.artifact }}"

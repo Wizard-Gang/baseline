@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { test } from 'node:test';
 import {
   firstOpenTask, highestUsedId, openTasks, validatePortfolioContract, validateQueue, validateQueueEdit,
-} from '../scripts/check-portfolio-contract.mjs';
+} from '../contract/check-portfolio-contract.mjs';
 
 const template = readFileSync(resolve(import.meta.dirname, 'fixtures/empty-plan.md'), 'utf8');
 const empty = (highest) => template.replace('<ID>', highest);
@@ -58,7 +58,7 @@ test('recycled, lower and falling IDs are rejected', () => {
 
 test('a task PR delivers a queued or new ID and removes its own task', () => {
   const base = plan('BASE-044', 'BASE-043', 'BASE-044');
-  const files = ['implementation_plan.md', 'scripts/check-change.mjs'];
+  const files = ['implementation_plan.md', 'contract/check-change.mjs'];
   assert.deepEqual(edit('[BASE-043] [OPS] Deliver', base, plan('BASE-044', 'BASE-044'), files), []);
   assert.deepEqual(edit('[BASE-044] [OPS] Deliver out of order', base, plan('BASE-044', 'BASE-043'), files), []);
   assert.deepEqual(edit('[BASE-051] [FIX] Repair', base, plan('BASE-051', 'BASE-043', 'BASE-044'), files), []);
