@@ -11,6 +11,7 @@ import { lockForCommit } from '../scripts/vendor-lock.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const platform = join(root, 'platform');
+const contract = join(root, 'contract');
 const COMMIT = 'a'.repeat(40);
 const author = ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid'];
 
@@ -20,10 +21,11 @@ function temp(t, prefix) {
   return directory;
 }
 
-/** A baseline-shaped source repository holding the working-tree platform/ in one commit. */
+/** A baseline-shaped source repository holding the working-tree platform/ and contract/ in one commit. */
 function sourceRepository(t) {
   const source = temp(t, 'baseline-vendor-source-');
   cpSync(platform, join(source, 'platform'), { recursive: true });
+  cpSync(contract, join(source, 'contract'), { recursive: true });
   const git = (...args) => execFileSync('git', args, { cwd: source, encoding: 'utf8' }).trim();
   git('init', '-q', '-b', 'main');
   git('add', '-A');
@@ -31,16 +33,20 @@ function sourceRepository(t) {
   return { source, git, commit: git('rev-parse', 'HEAD') };
 }
 
-/** A consumer checkout with platform/ vendored from the source commit and its printed lock. */
-function consumer(t) {
+/** A consumer checkout with each named directory vendored from the source commit and its printed lock. */
+function consumer(t, names = ['platform']) {
   const { source, commit } = sourceRepository(t);
   const copy = temp(t, 'baseline-vendor-consumer-');
-  cpSync(join(source, 'platform'), join(copy, 'platform'), { recursive: true });
-  writeFileSync(join(copy, 'platform', LOCK_FILE), lockForCommit(commit, source));
+  for (const name of names) {
+    cpSync(join(source, name), join(copy, name), { recursive: true });
+    writeFileSync(join(copy, name, LOCK_FILE), lockForCommit(commit, source, name));
+  }
   return { copy, commit };
 }
 
 const pin = (copy) => spawnSync(process.execPath, [join(copy, 'platform/conformance/cli.mjs'), 'pin'], { cwd: copy, encoding: 'utf8' });
+// A consumer that vendors only contract/ runs baseline's checker against its root.
+const pinAt = (copy) => spawnSync(process.execPath, [join(platform, 'conformance/cli.mjs'), 'pin', '--root', copy], { cwd: root, encoding: 'utf8' });
 
 test('the lock printer pins every platform/ file at the named commit', (t) => {
   const { source, git, commit } = sourceRepository(t);
@@ -59,6 +65,21 @@ test('the lock printer pins every platform/ file at the named commit', (t) => {
   assert.notEqual(lockForCommit('HEAD', source), formatLock(lock));
   assert.throws(() => lockForCommit('--output=x', source), /give the baseline commit/);
   assert.throws(() => lockForCommit('no-such-ref', source), /git rev-parse failed/);
+});
+
+test('the lock printer pins every contract/ file and names only a vendored directory', (t) => {
+  const { source, git, commit } = sourceRepository(t);
+  const lock = JSON.parse(lockForCommit(commit, source, 'contract'));
+  assert.equal(lock.commit, commit);
+  const tracked = git('ls-files', 'contract').split('\n').map((path) => path.slice('contract/'.length)).sort();
+  assert.deepEqual(Object.keys(lock.files), tracked);
+  for (const path of tracked) assert.equal(lock.files[path], sha256(readFileSync(join(contract, path))), path);
+  assert.ok(tracked.includes('check-workflow-shell.mjs') && tracked.includes('workflow-yaml.mjs'));
+  assert.ok(!Object.keys(JSON.parse(lockForCommit(commit, source)).files).some((path) => path.endsWith('workflow-yaml.mjs')));
+  assert.throws(() => lockForCommit(commit, source, 'scripts'), /vendored directory must be platform or contract/);
+  const printed = spawnSync(process.execPath, [join(root, 'scripts/vendor-lock.mjs'), commit, 'contract'], { cwd: source, encoding: 'utf8' });
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.equal(printed.stdout, formatLock(lock));
 });
 
 test('the npm script prints the lock and fails without a commit', () => {
@@ -102,6 +123,47 @@ test('a partial vendored copy fails', (t) => {
   assert.match(verifyVendored(copy)[0], /vendor\.lock\.json is missing; print it with baseline npm run vendor:lock/);
   rmSync(join(copy, 'platform'), { recursive: true });
   assert.deepEqual(verifyVendored(copy), ['platform/ must be a vendored directory']);
+});
+
+test('a vendored contract/ passes pin beside platform/ or alone, and an edited, missing or unpinned file fails', (t) => {
+  const { copy, commit } = consumer(t, ['platform', 'contract']);
+  assert.deepEqual(verifyVendored(copy, 'contract'), []);
+  assert.equal(JSON.parse(readFileSync(join(copy, 'contract', LOCK_FILE), 'utf8')).commit, commit);
+  let result = pin(copy);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Vendored platform\/ matches platform\/vendor\.lock\.json/);
+  assert.match(result.stdout, /Vendored contract\/ matches contract\/vendor\.lock\.json/);
+
+  const alone = temp(t, 'baseline-vendor-contract-');
+  cpSync(join(copy, 'contract'), join(alone, 'contract'), { recursive: true });
+  result = pinAt(alone);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Vendored contract\/ matches contract\/vendor\.lock\.json/);
+  assert.doesNotMatch(result.stdout, /platform\//);
+  const empty = temp(t, 'baseline-vendor-empty-');
+  result = pinAt(empty);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /FAIL platform\/ must be a vendored directory/);
+
+  appendFileSync(join(copy, 'contract/workflow-yaml.mjs'), '\nexport const bypass = true;\n');
+  rmSync(join(copy, 'contract/check-workflow-shell.mjs'));
+  writeFileSync(join(copy, 'contract/extra.mjs'), 'export {};\n');
+  const failures = verifyVendored(copy, 'contract');
+  assert.ok(failures.some((failure) => /^contract\/workflow-yaml\.mjs differs from baseline [0-9a-f]{40}; never edit vendored files$/.test(failure)));
+  assert.ok(failures.includes('contract/check-workflow-shell.mjs is pinned but missing'));
+  assert.ok(failures.includes('contract/extra.mjs is not pinned; vendored contract/ must match baseline exactly'));
+  result = pin(copy);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /FAIL contract\/workflow-yaml\.mjs differs/);
+  assert.doesNotMatch(result.stderr, /FAIL platform\//);
+
+  rmSync(join(copy, 'contract', LOCK_FILE));
+  assert.deepEqual(verifyVendored(copy, 'contract'), [`contract/${LOCK_FILE} is missing; print it with baseline npm run vendor:lock -- <commit> contract`]);
+  assert.equal(pin(copy).status, 1);
+  rmSync(join(copy, 'contract'), { recursive: true });
+  symlinkSync('missing', join(copy, 'contract'));
+  assert.deepEqual(verifyVendored(copy, 'contract'), ['contract/ must be a vendored directory']);
+  assert.equal(pin(copy).status, 1);
 });
 
 test('an unpinned or non-regular file fails', (t) => {

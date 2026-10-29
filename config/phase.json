@@ -4,5 +4,9 @@
   "platform": {
     "path": "platform/",
     "purpose": "shared edge code only"
+  },
+  "contract": {
+    "path": "contract/",
+    "purpose": "shared delivery tooling only"
   }
 }
