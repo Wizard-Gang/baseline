@@ -7,7 +7,7 @@ import { after, test } from 'node:test';
 import {
   CONTROLLED_TYPES, LAST_DIRECT_TASK,
   parseBranch, parsePlanTitle, parseTitle, validateBody, validateHistory, validatePlan, validatePullRequest,
-} from '../scripts/change-contract.mjs';
+} from '../contract/change-contract.mjs';
 
 const scriptRoot = resolve(import.meta.dirname, '..');
 const fixtures = [];
@@ -32,7 +32,7 @@ const task = (number, type = 'TEST') => `### BASE-${String(number).padStart(3, '
 - Non-goals: No application behavior.
 - Acceptance: The test catches a regression.
 - Validation: node --test tests/change-contract.test.mjs.
-- Authorities: scripts/change-contract.mjs.
+- Authorities: contract/change-contract.mjs.
 `;
 
 const pad = (number) => String(number).padStart(3, '0');
@@ -255,23 +255,24 @@ function commit(cwd, title, content) {
 test('CLI reads committed Git state and GitHub PR metadata at the exact head', () => {
   const root = mkdtempSync(join(tmpdir(), 'baseline-change-'));
   fixtures.push(root);
-  mkdirSync(join(root, 'scripts'));
-  for (const name of ['change-contract.mjs', 'check-change.mjs', 'check-portfolio-contract.mjs', 'release-contract.mjs']) {
-    copyFileSync(join(scriptRoot, 'scripts', name), join(root, 'scripts', name));
+  for (const dir of ['contract', 'config']) mkdirSync(join(root, dir));
+  for (const name of ['change-contract.mjs', 'check-change.mjs', 'check-portfolio-contract.mjs', 'delivery-config.mjs', 'release-contract.mjs']) {
+    copyFileSync(join(scriptRoot, 'contract', name), join(root, 'contract', name));
   }
+  copyFileSync(join(scriptRoot, 'config', 'delivery.json'), join(root, 'config', 'delivery.json'));
   git(root, 'init', '-q', '-b', 'main');
   git(root, 'config', 'user.name', 'Baseline Test');
   git(root, 'config', 'user.email', 'baseline@example.invalid');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'baseline', version: '0.1.0', private: true }) + '\n');
   writeFileSync(join(root, 'implementation_plan.md'), plan(2, 3));
   const baseSha = commit(root, '[BASE-001] [INIT] Establish baseline', body());
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs']).status, 0);
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs']).status, 0);
 
   git(root, 'switch', '-q', '-c', 'base-002-prove-process-contract');
   writeFileSync(join(root, 'implementation_plan.md'), plan(3));
   const title = '[BASE-002] [TEST] Prove process contract';
   const headSha = commit(root, title, body());
-  const local = command(root, process.execPath, ['scripts/check-change.mjs']);
+  const local = command(root, process.execPath, ['contract/check-change.mjs']);
   assert.equal(local.status, 0, local.stderr);
 
   const eventPath = join(root, 'event.json');
@@ -280,16 +281,16 @@ test('CLI reads committed Git state and GitHub PR metadata at the exact head', (
   };
   writeFileSync(eventPath, JSON.stringify(event));
   const env = { GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventPath };
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs'], env).status, 0);
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs'], env).status, 0);
   event.pull_request.title = '[BASE-002] [TEST] Another title';
   writeFileSync(eventPath, JSON.stringify(event));
-  const wrong = command(root, process.execPath, ['scripts/check-change.mjs'], env);
+  const wrong = command(root, process.execPath, ['contract/check-change.mjs'], env);
   assert.equal(wrong.status, 1);
   assert.match(wrong.stderr, /exactly equal/);
   event.pull_request.title = title;
   event.pull_request.body = `${body()}\nDifferent evidence`;
   writeFileSync(eventPath, JSON.stringify(event));
-  const wrongBody = command(root, process.execPath, ['scripts/check-change.mjs'], env);
+  const wrongBody = command(root, process.execPath, ['contract/check-change.mjs'], env);
   assert.equal(wrongBody.status, 1);
   assert.match(wrongBody.stderr, /PR body must exactly equal/);
 
@@ -297,30 +298,31 @@ test('CLI reads committed Git state and GitHub PR metadata at the exact head', (
   git(root, 'switch', '-q', 'main');
   writeFileSync(join(root, 'implementation_plan.md'), emptyPlan());
   commit(root, title, body());
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs']).status, 0);
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs']).status, 0);
 
   git(root, 'tag', '-a', 'v0.1.0', '-m', 'Release v0.1.0');
   git(root, 'switch', '-q', '--detach', 'v0.1.0');
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs']).status, 0);
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs']).status, 0);
 
   git(root, 'switch', '-q', 'main');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'baseline', version: '0.2.0', private: true }) + '\n');
   commit(root, '[BASE-003] [BUILD] Advance release version', body());
   git(root, 'switch', '-q', '--detach', 'HEAD');
-  assert.match(command(root, process.execPath, ['scripts/check-change.mjs']).stderr, /exact annotated semantic release tag/);
+  assert.match(command(root, process.execPath, ['contract/check-change.mjs']).stderr, /exact annotated semantic release tag/);
   git(root, 'tag', 'v0.2.0');
-  assert.match(command(root, process.execPath, ['scripts/check-change.mjs']).stderr, /requires an annotated tag/);
+  assert.match(command(root, process.execPath, ['contract/check-change.mjs']).stderr, /requires an annotated tag/);
   git(root, 'tag', '-d', 'v0.2.0');
   git(root, 'tag', '-a', 'v0.3.0', '-m', 'Mismatched version');
-  assert.match(command(root, process.execPath, ['scripts/check-change.mjs']).stderr, /does not match package.json version/);
+  assert.match(command(root, process.execPath, ['contract/check-change.mjs']).stderr, /does not match package.json version/);
 });
 test('CLI checks a task PR into the release branch and a local release branch as its release PR', () => {
   const root = mkdtempSync(join(tmpdir(), 'baseline-release-'));
   fixtures.push(root);
-  for (const dir of ['scripts', 'docs', 'config']) mkdirSync(join(root, dir));
-  for (const name of ['change-contract.mjs', 'check-change.mjs', 'check-portfolio-contract.mjs', 'release-contract.mjs']) {
-    copyFileSync(join(scriptRoot, 'scripts', name), join(root, 'scripts', name));
+  for (const dir of ['contract', 'docs', 'config']) mkdirSync(join(root, dir));
+  for (const name of ['change-contract.mjs', 'check-change.mjs', 'check-portfolio-contract.mjs', 'delivery-config.mjs', 'release-contract.mjs']) {
+    copyFileSync(join(scriptRoot, 'contract', name), join(root, 'contract', name));
   }
+  copyFileSync(join(scriptRoot, 'config', 'delivery.json'), join(root, 'config', 'delivery.json'));
   git(root, 'init', '-q', '-b', 'main');
   git(root, 'config', 'user.name', 'Baseline Test');
   git(root, 'config', 'user.email', 'baseline@example.invalid');
@@ -334,7 +336,7 @@ test('CLI checks a task PR into the release branch and a local release branch as
   writeFileSync(join(root, 'implementation_plan.md'), emptyPlan());
   writeFileSync(join(root, 'config/release.json'), JSON.stringify(r001('BASE-002'), null, 2) + '\n');
   commit(root, '[BASE-002] [TEST] Prove process contract', body());
-  const emptied = command(root, process.execPath, ['scripts/check-change.mjs']);
+  const emptied = command(root, process.execPath, ['contract/check-change.mjs']);
   assert.equal(emptied.status, 0, emptied.stderr);
   git(root, 'reset', '-q', '--hard', 'release/r001');
   mkdirSync(join(root, 'config'), { recursive: true });
@@ -342,7 +344,7 @@ test('CLI checks a task PR into the release branch and a local release branch as
   writeFileSync(join(root, 'config/release.json'), JSON.stringify(r001('BASE-002'), null, 2) + '\n');
   const title = '[BASE-002] [TEST] Prove process contract';
   const taskSha = commit(root, title, body());
-  const local = command(root, process.execPath, ['scripts/check-change.mjs']);
+  const local = command(root, process.execPath, ['contract/check-change.mjs']);
   assert.equal(local.status, 0, local.stderr);
   assert.match(local.stdout, /Controlled BASE-002 candidate/);
 
@@ -352,13 +354,13 @@ test('CLI checks a task PR into the release branch and a local release branch as
   };
   writeFileSync(eventPath, JSON.stringify(event));
   const env = { GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventPath };
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs'], env).status, 0);
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs'], env).status, 0);
   event.pull_request.base.ref = 'main';
   writeFileSync(eventPath, JSON.stringify(event));
-  assert.equal(command(root, process.execPath, ['scripts/check-change.mjs'], env).status, 0, 'BASE-002 predates the cut-over');
+  assert.equal(command(root, process.execPath, ['contract/check-change.mjs'], env).status, 0, 'BASE-002 predates the cut-over');
   event.pull_request.base.ref = 'release/r002';
   writeFileSync(eventPath, JSON.stringify(event));
-  const wrong = command(root, process.execPath, ['scripts/check-change.mjs'], env);
+  const wrong = command(root, process.execPath, ['contract/check-change.mjs'], env);
   assert.equal(wrong.status, 1);
   assert.match(wrong.stderr, /must target the config\/release.json branch release\/r001/);
   rmSync(eventPath);
@@ -370,7 +372,7 @@ test('CLI checks a task PR into the release branch and a local release branch as
     git(root, 'switch', '-q', '-c', branch, 'release/r001');
     writeFileSync(join(root, 'implementation_plan.md'), planAt(5, ...numbers));
     commit(root, `[PLAN] ${branch}`, body());
-    return command(root, process.execPath, ['scripts/check-change.mjs']);
+    return command(root, process.execPath, ['contract/check-change.mjs']);
   };
   const accept = (branch) => {
     git(root, 'switch', '-q', 'release/r001');
@@ -386,7 +388,7 @@ test('CLI checks a task PR into the release branch and a local release branch as
   assert.match(planChange('plan-reuse-retired-work', [4, 3]).stderr, /BASE-004: a new task takes an ID above BASE-005/,
     'BASE-005 was once queued, so its removal retires every ID up to it');
   git(root, 'switch', '-q', 'release/r001');
-  const release = command(root, process.execPath, ['scripts/check-change.mjs']);
+  const release = command(root, process.execPath, ['contract/check-change.mjs']);
   assert.equal(release.status, 0, release.stderr);
   assert.match(release.stdout, /Controlled r001 candidate/);
 });

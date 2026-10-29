@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DELIVERY } from './delivery-config.mjs';
 import {
   FULL_SHA, RELEASE_TAG, parseSha256Manifest,
   reconcileReleasePublication, verifySha256Manifest,
@@ -162,7 +163,7 @@ function verifyPublishedRelease(release, tag, expectedAssets) {
 }
 
 function downloadAndVerify(runGh, { tag, repo, expectedAssets, localPaths }) {
-  const dir = mkdtempSync(join(tmpdir(), 'baseline-release-verify-'));
+  const dir = mkdtempSync(join(tmpdir(), `${DELIVERY.name}-release-verify-`));
   try {
     const args = ['release', 'download', tag, '--repo', repo, '--dir', dir];
     for (const asset of expectedAssets) args.push('--pattern', asset.name);
