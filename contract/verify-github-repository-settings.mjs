@@ -2,7 +2,7 @@
 import {
   loadExpectedSettings,
   verifyLiveGithubSettings,
-} from "../scripts/github-repository-settings.mjs";
+} from "./github-repository-settings.mjs";
 
 const expected = await loadExpectedSettings();
 const token = process.env.GH_ADMIN_TOKEN || process.env.GH_TOKEN || "";

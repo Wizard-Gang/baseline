@@ -125,7 +125,7 @@ test('check:patch fails a commit that edits a merged migration and re-pins it', 
   writePins(copy, { '0001_universal.sql': sha256(edited) });
   git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-am', 'edit');
   const head = git('rev-parse', 'HEAD');
-  const run = (from) => spawnSync(process.execPath, [join(copy, 'scripts/check-patch.mjs')], {
+  const run = (from) => spawnSync(process.execPath, [join(copy, 'contract/check-patch.mjs')], {
     cwd: copy, encoding: 'utf8', env: { ...process.env, PATCH_BASE_SHA: from, PATCH_HEAD_SHA: head },
   });
   const failed = run(base);

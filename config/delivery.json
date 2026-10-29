@@ -1,0 +1,9 @@
+{
+  "name": "baseline",
+  "repository": "Wizard-Gang/baseline",
+  "idPrefix": "BASE",
+  "lastDirectTask": 43,
+  "planFields": ["Dependency", "Why", "Scope", "Non-goals", "Acceptance", "Validation", "Authorities"],
+  "releaseWorkflow": true,
+  "migrationPins": true
+}

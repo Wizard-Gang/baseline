@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseReleaseBranch, validateHistory, validatePlan, validatePullRequest } from './change-contract.mjs';
+import { ID_PREFIX, parseReleaseBranch, validateHistory, validatePlan, validatePullRequest } from './change-contract.mjs';
 import { RELEASE_TAG } from './release-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -183,7 +183,7 @@ try {
   } else {
     console.log(context.kind === 'candidate'
       ? `Controlled ${result.nextId} candidate at exact head ${context.headSha} passed.`
-      : `Controlled main history through BASE-${String(result.lastId).padStart(3, '0')} passed.`);
+      : `Controlled main history through ${ID_PREFIX}-${String(result.lastId).padStart(3, '0')} passed.`);
   }
 } catch (error) {
   console.error(`FAIL ${error.message}`);

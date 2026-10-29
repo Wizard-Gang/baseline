@@ -5,7 +5,7 @@ import {
   githubApi,
   loadExpectedSettings,
   rulesetPayload,
-} from "../scripts/github-repository-settings.mjs";
+} from "../contract/github-repository-settings.mjs";
 
 const expected = await loadExpectedSettings();
 

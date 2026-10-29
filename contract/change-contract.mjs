@@ -1,5 +1,7 @@
-// The pure, provider-independent rules for a controlled BASE change.
+// The pure, provider-independent rules for a controlled change. The ID prefix, plan fields and last direct-to-main
+// task come from the repository's config/delivery.json.
 import { validateQueueEdit } from './check-portfolio-contract.mjs';
+import { DELIVERY } from './delivery-config.mjs';
 
 export const CONTROLLED_TYPES = Object.freeze([
   'INIT', 'FEAT', 'FIX', 'SEC', 'API', 'A11Y', 'I18N', 'AI', 'DB',
@@ -11,22 +13,21 @@ export const REQUIRED_BODY_FIELDS = Object.freeze([
   'Evidence', 'Source', 'Release',
 ]);
 
-export const REQUIRED_PLAN_FIELDS = Object.freeze([
-  'Dependency', 'Why', 'Scope', 'Non-goals', 'Acceptance', 'Validation', 'Authorities',
-]);
+export const REQUIRED_PLAN_FIELDS = DELIVERY.planFields;
 
-// Tasks through BASE-043 merged straight into main. Later tasks squash into the open release/rNNN branch, and
-// main changes only by a release PR that rebase-merges one commit per task or plan change.
-export const LAST_DIRECT_TASK = 43;
+// Tasks through LAST_DIRECT_TASK merged straight into main. Later tasks squash into the open release/rNNN branch,
+// and main changes only by a release PR that rebase-merges one commit per task or plan change.
+export const LAST_DIRECT_TASK = DELIVERY.lastDirectTask;
+export const ID_PREFIX = DELIVERY.idPrefix;
 
-const titlePattern = /^\[BASE-(\d{3,})\] \[([A-Z][A-Z0-9]*)\] (\S[^\r\n]*)$/;
+const titlePattern = new RegExp(`^\\[${ID_PREFIX}-(\\d{3,})\\] \\[([A-Z][A-Z0-9]*)\\] (\\S[^\\r\\n]*)$`);
 const planTitlePattern = /^\[PLAN\] (\S[^\r\n]*)$/;
 const planBranchPattern = /^plan-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const releaseBranchPattern = /^release\/r(\d{3,})$/;
-const branchPattern = /^base-(\d{3,})-[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const taskPattern = /^### BASE-(\d{3,}) — \[([A-Z][A-Z0-9]*)\] (\S[^\r\n]*)$/gm;
+const branchPattern = new RegExp(`^${ID_PREFIX.toLowerCase()}-(\\d{3,})-[a-z0-9]+(?:-[a-z0-9]+)*$`);
+const taskPattern = new RegExp(`^### ${ID_PREFIX}-(\\d{3,}) — \\[([A-Z][A-Z0-9]*)\\] (\\S[^\\r\\n]*)$`, 'gm');
 
-const id = (number) => `BASE-${String(number).padStart(3, '0')}`;
+const id = (number) => `${ID_PREFIX}-${String(number).padStart(3, '0')}`;
 const normalizeBody = (value) => value.replaceAll('\r\n', '\n').replace(/\n+$/, '');
 const releaseId = (number) => `r${String(number).padStart(3, '0')}`;
 const sameList = (actual, expected) => Array.isArray(actual) && actual.length === expected.length
@@ -102,7 +103,7 @@ export function validateHistory(records) {
       failures.push(`${label}: invalid controlled title`);
       return;
     }
-    if (index === 0 && title.number !== 1) failures.push(`${label}: history must begin at BASE-001, found ${title.id}`);
+    if (index === 0 && title.number !== 1) failures.push(`${label}: history must begin at ${id(1)}, found ${title.id}`);
     if (ids.has(title.number)) failures.push(`${label}: ${title.id} was already used; IDs are never recycled`);
     ids.add(title.number);
     lastId = Math.max(lastId, title.number);
@@ -122,13 +123,13 @@ export function validatePlan(markdown, delivered = new Set()) {
   }
   const headings = [...markdown.matchAll(/^### .+$/gm)];
   const tasks = [...markdown.matchAll(taskPattern)].map((match) => ({
-    id: `BASE-${match[1]}`, number: Number(match[1]), type: match[2], summary: match[3],
+    id: `${ID_PREFIX}-${match[1]}`, number: Number(match[1]), type: match[2], summary: match[3],
     start: match.index, end: match.index + match[0].length,
   }));
   if (!tasks.length && !markdown.includes('The queue is empty. Select no implementation task.')) {
     failures.push('empty implementation_plan.md must instruct the next change to fill the queue');
   }
-  if (headings.length !== tasks.length) failures.push('every ### heading must be a BASE task');
+  if (headings.length !== tasks.length) failures.push(`every ### heading must be a ${ID_PREFIX} task`);
   if (/^#{1,6}\s+(?:Done|Completed|History|Retrospective|Release notes)\b/im.test(markdown)) {
     failures.push('active implementation_plan.md cannot retain completed or historical sections');
   }
@@ -154,18 +155,18 @@ export function parseReleaseBranch(ref) {
     ? { id: releaseId(Number(match[1])), number: Number(match[1]) } : null;
 }
 
-/** config/release.json names the open release: `{ id: "r001", branch: "release/r001", tasks: ["BASE-008", ...] }`. */
+/** config/release.json names the open release: `{ id: "r001", branch: "release/r001", tasks: ["<PREFIX>-008", ...] }`. */
 export function validateReleaseConfig(config, label = 'config/release.json') {
   if (!isObject(config)) return [`${label} must be an {id, branch, tasks} object`];
   const failures = [];
   if (Object.keys(config).sort().join() !== 'branch,id,tasks') failures.push(`${label} must hold only id, branch and tasks`);
   if (parseReleaseBranch(config.branch)?.id !== config.id) failures.push(`${label}: branch must be release/${config.id} for id ${config.id}`);
   const tasks = Array.isArray(config.tasks) ? config.tasks : [];
-  if (!tasks.length) failures.push(`${label}: tasks must list the release's BASE IDs`);
+  if (!tasks.length) failures.push(`${label}: tasks must list the release's ${ID_PREFIX} IDs`);
   tasks.forEach((task, index) => {
-    const number = Number(String(task).slice(5));
+    const number = Number(String(task).slice(ID_PREFIX.length + 1));
     if (task !== id(number) || tasks.indexOf(task) !== index) {
-      failures.push(`${label}: tasks must be unique canonical BASE IDs`);
+      failures.push(`${label}: tasks must be unique canonical ${ID_PREFIX} IDs`);
     }
   });
   return [...new Set(failures)];
@@ -226,9 +227,9 @@ export function validatePullRequest(context) {
   const planOnly = parsePlanTitle(context.title);
   const title = parseTitle(context.title);
   const branch = parseBranch(context.branch);
-  if (!title && !planOnly) failures.push('PR title must be [BASE-###] [TYPE] Imperative summary or [PLAN] Imperative summary');
+  if (!title && !planOnly) failures.push(`PR title must be [${ID_PREFIX}-###] [TYPE] Imperative summary or [PLAN] Imperative summary`);
   if (planOnly && !planBranchPattern.test(context.branch ?? '')) failures.push('plan-only branch must be plan-imperative-summary');
-  if (!planOnly && !branch) failures.push('branch must be base-###-imperative-summary');
+  if (!planOnly && !branch) failures.push(`branch must be ${ID_PREFIX.toLowerCase()}-###-imperative-summary`);
   if (context.title !== context.head.subject) failures.push('PR title must exactly equal the head commit subject');
   if (typeof context.prBody !== 'string') failures.push('PR body must contain the controlled commit body');
   else if (normalizeBody(context.prBody) !== normalizeBody(context.head.body)) {
@@ -246,7 +247,7 @@ export function validatePullRequest(context) {
   failures.push(...validateBody(context.head.body, title?.id ?? 'head commit'));
 
   // Any change may add, edit, reorder or remove queued tasks. A new task takes an ID above the plan's recorded
-  // highest ID ever used, so a removed queued ID stays retired (scripts/check-portfolio-contract.mjs).
+  // highest ID ever used, so a removed queued ID stays retired (contract/check-portfolio-contract.mjs).
   const basePlan = validatePlan(context.basePlan, baseHistory.ids);
   failures.push(...basePlan.failures.map((failure) => `base plan: ${failure}`));
   const headPlan = validatePlan(context.headPlan, baseHistory.ids);
