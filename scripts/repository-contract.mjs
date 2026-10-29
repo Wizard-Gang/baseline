@@ -4,7 +4,7 @@ import { loadCloudflareDesiredState, validateCloudflareDesiredState } from './cl
 import { validateMigrationsAt } from './migration-contract.mjs';
 import { validateSecretRegistryAt } from './secret-registry.mjs';
 import { DEPLOY_WORKFLOW, validateDeployWorkflow } from './deploy-workflow-contract.mjs';
-import { block, keys } from './workflow-yaml.mjs';
+import { block, keys } from '../contract/workflow-yaml.mjs';
 
 function requireMatch(failures, name, source, pattern) {
   if (!pattern.test(source ?? '')) failures.push(name);
@@ -14,15 +14,19 @@ function sameSet(actual, expected) {
   return actual.length === expected.length && expected.every((entry) => actual.includes(entry));
 }
 
-// Top-level paths that would make baseline a product repository. The platform grant never unlocks them.
+// Top-level paths that would make baseline a product repository. The platform and contract grants never unlock them.
 export const FORBIDDEN_APPLICATION_PATHS = Object.freeze(['src', 'app', 'apps', 'game', 'pages', 'public', 'workers', 'functions']);
 export const PLATFORM_GRANT = Object.freeze({ path: 'platform/', purpose: 'shared edge code only' });
+export const CONTRACT_GRANT = Object.freeze({ path: 'contract/', purpose: 'shared delivery tooling only' });
+// Each vendored top-level directory and the exact grant that allows it.
+export const GRANTS = Object.freeze({ platform: PLATFORM_GRANT, contract: CONTRACT_GRANT });
 
-export function hasPlatformGrant(phase) {
-  const grant = phase?.platform;
+export function hasGrant(phase, name) {
+  const expected = GRANTS[name];
+  const grant = phase?.[name];
   return grant !== null && typeof grant === 'object' && !Array.isArray(grant)
-    && sameSet(Object.keys(grant), Object.keys(PLATFORM_GRANT))
-    && grant.path === PLATFORM_GRANT.path && grant.purpose === PLATFORM_GRANT.purpose;
+    && sameSet(Object.keys(grant), Object.keys(expected))
+    && grant.path === expected.path && grant.purpose === expected.purpose;
 }
 
 export function validatePhase(phase) {
@@ -30,11 +34,11 @@ export function validatePhase(phase) {
   if (phase?.phase !== 'contract' || phase?.applicationDevelopment !== false) {
     failures.push('application development must remain disabled during contract proof');
   }
-  if (!sameSet(Object.keys(phase ?? {}), ['phase', 'applicationDevelopment', 'platform'])) {
-    failures.push('phase must declare exactly phase, applicationDevelopment and the platform grant');
+  if (!sameSet(Object.keys(phase ?? {}), ['phase', 'applicationDevelopment', ...Object.keys(GRANTS)])) {
+    failures.push('phase must declare exactly phase, applicationDevelopment and the platform and contract grants');
   }
-  if (!hasPlatformGrant(phase)) {
-    failures.push('phase platform grant must be exactly platform/ for shared edge code only');
+  for (const [name, grant] of Object.entries(GRANTS)) {
+    if (!hasGrant(phase, name)) failures.push(`phase ${name} grant must be exactly ${grant.path} for ${grant.purpose}`);
   }
   return failures;
 }
@@ -45,9 +49,10 @@ export function validateRepositoryPaths(present, phase) {
   for (const path of FORBIDDEN_APPLICATION_PATHS) {
     if (present.has(path)) failures.push(`application path exists before contract proof: ${path}`);
   }
-  if (present.has('platform')) {
-    if (!hasPlatformGrant(phase)) failures.push('platform/ exists without the config/phase.json platform grant');
-    else if (present.get('platform') !== true) failures.push('platform/ must be a directory');
+  for (const name of Object.keys(GRANTS)) {
+    if (!present.has(name)) continue;
+    if (!hasGrant(phase, name)) failures.push(`${name}/ exists without the config/phase.json ${name} grant`);
+    else if (present.get(name) !== true) failures.push(`${name}/ must be a directory`);
   }
   return failures;
 }
@@ -56,6 +61,13 @@ export function validateRepositoryPaths(present, phase) {
 export const TOKEN_SCRIPTS = Object.freeze({
   'discover:cloudflare-token-targets': 'discover-cloudflare-token-targets.mjs',
   'rotate:cloudflare-token': 'rotate-cloudflare-token.mjs',
+});
+
+// Shared delivery commands and the contract/ scripts they must run, so consumers vendor the same files.
+export const CONTRACT_SCRIPTS = Object.freeze({
+  'check:workflow-shell': 'check-workflow-shell.mjs',
+  'verify:github-settings': 'verify-github-repository-settings.mjs',
+  'apply:github-settings': 'apply-github-repository-settings.mjs',
 });
 
 // Baseline's workflows: its own CI and release path, plus the reusable deploy that only consumers call.
@@ -79,7 +91,10 @@ export function validateRepositoryContract({ ci, release, cutter, deploy, pkg, l
     if (!pkg.scripts?.[name]) failures.push(`missing package script ${name}`);
   }
   if (pkg.scripts?.['vendor:lock'] !== 'node scripts/vendor-lock.mjs') {
-    failures.push('vendor:lock must print the platform/ lock with scripts/vendor-lock.mjs');
+    failures.push('vendor:lock must print the platform/ and contract/ locks with scripts/vendor-lock.mjs');
+  }
+  for (const [name, file] of Object.entries(CONTRACT_SCRIPTS)) {
+    if (pkg.scripts?.[name] !== `node contract/${file}`) failures.push(`${name} must run contract/${file}`);
   }
   if (pkg.scripts?.['verify:cloudflare'] !== 'node scripts/verify-cloudflare.mjs') {
     failures.push('verify:cloudflare must run the read-only scripts/verify-cloudflare.mjs');
@@ -235,7 +250,7 @@ export function validateRepositoryAt(root) {
     '.node-version', 'package-lock.json', 'implementation_plan.md', '.github/pull_request_template.md',
     'tests/change-contract.test.mjs', 'tests/github-settings.test.mjs',
     'tests/release-contract.test.mjs', 'tests/repository-contract.test.mjs',
-    'scripts/check-workflow-shell.mjs', 'tests/workflow-shell.test.mjs',
+    ...Object.values(CONTRACT_SCRIPTS).map((file) => `contract/${file}`), 'contract/workflow-yaml.mjs', 'tests/workflow-shell.test.mjs',
     '.github/workflows/release-cutter.yml', 'config/phase.json',
     'config/cloudflare.json', 'scripts/cloudflare-desired-state.mjs', 'tests/cloudflare-desired-state.test.mjs',
     'scripts/verify-cloudflare.mjs', 'scripts/cloudflare-drift.mjs', 'scripts/cloudflare-live-state.mjs',
@@ -251,7 +266,7 @@ export function validateRepositoryAt(root) {
     ...['README.md', 'index.d.ts', 'cli.mjs', 'desired.mjs', 'jsonc.mjs', 'template.mjs', 'vendor.mjs', 'wrangler.mjs']
       .map((file) => `platform/conformance/${file}`),
     'tests/wrangler-conformance.test.mjs', 'tests/vendoring.test.mjs', 'tests/fixtures/wrangler-hexframe-f95b735.jsonc',
-    DEPLOY_WORKFLOW, 'scripts/deploy-workflow-contract.mjs', 'scripts/workflow-yaml.mjs', 'tests/deploy-workflow-contract.test.mjs',
+    DEPLOY_WORKFLOW, 'scripts/deploy-workflow-contract.mjs', 'tests/deploy-workflow-contract.test.mjs',
     'platform/deploy/README.md', 'platform/deploy/index.d.ts', 'platform/deploy/verify.mjs', 'tests/deploy-verify.test.mjs',
     'platform/deploy/evidence.mjs', 'tests/deploy-evidence.test.mjs',
     'scripts/cloudflare-token-targets.mjs', ...Object.values(TOKEN_SCRIPTS).map((file) => `scripts/${file}`),
@@ -273,12 +288,14 @@ export function validateRepositoryAt(root) {
   }
   if (failures.length) return failures;
   const read = (path) => readFileSync(join(root, path), 'utf8');
-  const present = new Map([...FORBIDDEN_APPLICATION_PATHS, 'platform']
+  const present = new Map([...FORBIDDEN_APPLICATION_PATHS, ...Object.keys(GRANTS)]
     .filter((path) => existsSync(join(root, path)))
     .map((path) => [path, statSync(join(root, path)).isDirectory()]));
   failures.push(...validateRepositoryPaths(present, JSON.parse(read('config/phase.json'))));
   // Baseline is the vendoring source; only a consumer's vendored copy carries a lock.
-  if (existsSync(join(root, 'platform/vendor.lock.json'))) failures.push('baseline platform/ is the vendoring source and must not carry vendor.lock.json');
+  for (const name of Object.keys(GRANTS)) {
+    if (existsSync(join(root, name, 'vendor.lock.json'))) failures.push(`baseline ${name}/ is the vendoring source and must not carry vendor.lock.json`);
+  }
   const workflows = readdirSync(join(root, '.github/workflows')).sort();
   if (workflows.join() !== WORKFLOWS.join()) failures.push(`workflows must be exactly ${WORKFLOWS.join(', ')}`);
   for (const config of ['wrangler.json', 'wrangler.jsonc', 'wrangler.toml']) {

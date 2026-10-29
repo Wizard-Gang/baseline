@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The vendored conformance commands, run from the consumer repository root:
-//   node platform/conformance/cli.mjs pin                                   vendored platform/ matches its lock
+//   node platform/conformance/cli.mjs pin                                   each vendored platform/ and contract/ matches its lock
 //   node platform/conformance/cli.mjs wrangler --worker <label> [config]    wrangler config conforms (default wrangler.jsonc)
 //   node platform/conformance/cli.mjs render --worker <label> --store-id <id>  print a starting config from the template
 // Exit codes: 0 conformant, 1 nonconformant, 2 usage error. Nothing here reads a provider or the network.
@@ -8,7 +8,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderWranglerTemplate } from './template.mjs';
-import { verifyVendored } from './vendor.mjs';
+import { carriedDirectories, LOCK_FILE, verifyVendored } from './vendor.mjs';
 import { checkWranglerSource } from './wrangler.mjs';
 
 const USAGE = 'usage: cli.mjs pin [--root <dir>] | wrangler --worker <label> [config] | render --worker <label> --store-id <id>';
@@ -48,7 +48,11 @@ export function run(argv, { cwd = process.cwd(), out = console.log, err = consol
   };
   if (command === 'pin' && !positional.length && !options.worker && !options['store-id']) {
     const root = resolve(cwd, options.root ?? '.');
-    return report(verifyVendored(root), `Vendored platform/ matches platform/vendor.lock.json in ${root}`);
+    // A checkout carrying neither directory fails as a missing platform/.
+    const carried = carriedDirectories(root);
+    const names = carried.length ? carried : ['platform'];
+    return report(names.flatMap((name) => verifyVendored(root, name)),
+      names.map((name) => `Vendored ${name}/ matches ${name}/${LOCK_FILE} in ${root}`).join('\n'));
   }
   if (command === 'wrangler' && options.worker && positional.length <= 1 && !options.root && !options['store-id']) {
     const path = resolve(cwd, positional[0] ?? 'wrangler.jsonc');

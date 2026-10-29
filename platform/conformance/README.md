@@ -4,16 +4,17 @@ Keeps each consumer's Worker config and vendored `platform/` from drifting away 
 
 ## Vendoring
 
-A consumer copies baseline `platform/` verbatim from a merged `main` commit. It commits the lock that baseline prints for that commit as `platform/vendor.lock.json`:
+A consumer copies baseline `platform/`, and the shared delivery tooling in `contract/`, verbatim from a merged `main` commit. It commits the lock that baseline prints for that commit inside each directory as `vendor.lock.json`:
 
 ```sh
 # in baseline
 npm run vendor:lock -- <commit> > ../<consumer>/platform/vendor.lock.json
+npm run vendor:lock -- <commit> contract > ../<consumer>/contract/vendor.lock.json
 # in the consumer
 node platform/conformance/cli.mjs pin
 ```
 
-The lock holds `schemaVersion`, `source` (`Wizard-Gang/baseline`), the full source `commit` and a SHA-256 for every file under `platform/`. `pin` fails in any of these cases:
+Each lock holds `schemaVersion`, `source` (`Wizard-Gang/baseline`), the full source `commit` and a SHA-256 for every file under its directory. `pin` checks each of `platform/` and `contract/` that the checkout carries, and a checkout carrying neither fails as a missing `platform/`. `pin --root <dir>` checks another checkout. `pin` fails in any of these cases:
 
 - an edited file;
 - a missing pinned file;
