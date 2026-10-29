@@ -1,12 +1,15 @@
-// The vendoring pin. A consumer copies baseline platform/ verbatim and commits platform/vendor.lock.json, which
-// names the baseline commit it came from and the SHA-256 of every file. Any edit, missing file or unpinned file
-// fails, so the vendored shell, schema and checker can only change by re-vendoring from baseline.
+// The vendoring pin. A consumer copies baseline platform/ or contract/ verbatim and commits that directory's
+// vendor.lock.json, which names the baseline commit it came from and the SHA-256 of every file. Any edit, missing
+// file or unpinned file fails, so the vendored shell, schema, checker and delivery tooling can only change by
+// re-vendoring from baseline.
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const LOCK_FILE = 'vendor.lock.json';
 export const SOURCE = 'Wizard-Gang/baseline';
+// The top-level directories a consumer vendors from baseline, each with its own lock.
+export const VENDORED_DIRECTORIES = Object.freeze(['platform', 'contract']);
 const COMMIT = /^[0-9a-f]{40}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
@@ -19,7 +22,7 @@ const isPath = (path) => path.split('/').every((segment) => SEGMENT.test(segment
 
 /**
  * @param {string} commit the full baseline commit the files were read from
- * @param {Map<string, string | Uint8Array>} files contents keyed by path relative to platform/
+ * @param {Map<string, string | Uint8Array>} files contents keyed by path relative to the vendored directory
  */
 export function buildLock(commit, files) {
   if (!COMMIT.test(commit)) throw new Error('the lock commit must be a full 40-character SHA');
@@ -49,21 +52,22 @@ export function validateLockShape(lock) {
 }
 
 /**
- * Compare the files present under platform/ with the lock.
+ * Compare the files present under a vendored directory with its lock.
  * @param {unknown} lock @param {Map<string, string | Uint8Array>} files @param {string[]} [unsafe] symlinks and other non-files
+ * @param {string} [directory] the vendored directory, platform or contract
  */
-export function compareVendored(lock, files, unsafe = []) {
+export function compareVendored(lock, files, unsafe = [], directory = 'platform') {
   const failures = validateLockShape(lock);
   if (failures.length) return failures;
   const pins = /** @type {Record<string, string>} */ (/** @type {any} */ (lock).files);
-  for (const path of unsafe) failures.push(`platform/${path} is not a regular file`);
+  for (const path of unsafe) failures.push(`${directory}/${path} is not a regular file`);
   for (const [path, content] of files) {
     if (path === LOCK_FILE) continue;
-    if (!Object.hasOwn(pins, path)) failures.push(`platform/${path} is not pinned; vendored platform/ must match baseline exactly`);
-    else if (pins[path] !== sha256(content)) failures.push(`platform/${path} differs from baseline ${/** @type {any} */ (lock).commit}; never edit vendored files`);
+    if (!Object.hasOwn(pins, path)) failures.push(`${directory}/${path} is not pinned; vendored ${directory}/ must match baseline exactly`);
+    else if (pins[path] !== sha256(content)) failures.push(`${directory}/${path} differs from baseline ${/** @type {any} */ (lock).commit}; never edit vendored files`);
   }
   for (const path of Object.keys(pins)) {
-    if (!files.has(path)) failures.push(`platform/${path} is pinned but missing`);
+    if (!files.has(path)) failures.push(`${directory}/${path} is pinned but missing`);
   }
   return failures;
 }
@@ -81,19 +85,35 @@ function walk(directory, prefix = '', files = new Map(), unsafe = []) {
 }
 
 /**
- * Verify a consumer checkout's vendored platform/ against its lock.
- * @param {string} root the consumer repository root
+ * Verify one vendored directory of a consumer checkout against its lock.
+ * @param {string} root the consumer repository root @param {string} [name] the vendored directory, platform or contract
  */
-export function verifyVendored(root) {
-  const directory = join(root, 'platform');
-  if (!existsSync(directory) || !lstatSync(directory).isDirectory()) return ['platform/ must be a vendored directory'];
-  if (!existsSync(join(directory, LOCK_FILE))) return [`platform/${LOCK_FILE} is missing; print it with baseline npm run vendor:lock -- <commit>`];
+export function verifyVendored(root, name = 'platform') {
+  const directory = join(root, name);
+  if (!existsSync(directory) || !lstatSync(directory).isDirectory()) return [`${name}/ must be a vendored directory`];
+  const print = name === 'platform' ? '<commit>' : `<commit> ${name}`;
+  if (!existsSync(join(directory, LOCK_FILE))) return [`${name}/${LOCK_FILE} is missing; print it with baseline npm run vendor:lock -- ${print}`];
   let lock;
   try {
     lock = JSON.parse(readFileSync(join(directory, LOCK_FILE), 'utf8'));
   } catch {
-    return [`platform/${LOCK_FILE} is not valid JSON`];
+    return [`${name}/${LOCK_FILE} is not valid JSON`];
   }
   const { files, unsafe } = walk(directory);
-  return compareVendored(lock, files, unsafe);
+  return compareVendored(lock, files, unsafe, name);
+}
+
+/**
+ * The vendored directories a consumer checkout carries, each verified by pin; a dangling link still counts.
+ * @param {string} root the consumer repository root
+ */
+export function carriedDirectories(root) {
+  return VENDORED_DIRECTORIES.filter((name) => {
+    try {
+      lstatSync(join(root, name));
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
