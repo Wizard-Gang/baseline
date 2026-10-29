@@ -1,7 +1,7 @@
 // The contract for .github/workflows/deploy-worker.yml, the reusable tag-to-production Worker deploy.
 // Baseline only hosts it: the workflow runs solely when a consuming repository calls it.
-import { literalRunBlocks } from './check-workflow-shell.mjs';
-import { block, keys } from './workflow-yaml.mjs';
+import { literalRunBlocks } from '../contract/check-workflow-shell.mjs';
+import { block, keys } from '../contract/workflow-yaml.mjs';
 
 export const DEPLOY_WORKFLOW = '.github/workflows/deploy-worker.yml';
 export const DEPLOY_INPUTS = Object.freeze(['worker', 'tag', 'expected_sha']);

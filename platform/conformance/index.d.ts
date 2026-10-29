@@ -48,12 +48,19 @@ export function renderWranglerTemplate(
 // vendor.mjs
 export const LOCK_FILE: 'vendor.lock.json';
 export const SOURCE: 'Wizard-Gang/baseline';
+export const VENDORED_DIRECTORIES: readonly ['platform', 'contract'];
 export function sha256(content: string | Uint8Array): string;
 export function buildLock(commit: string, files: Map<string, string | Uint8Array>): VendorLock;
 export function formatLock(lock: VendorLock): string;
 export function validateLockShape(lock: unknown): string[];
-export function compareVendored(lock: unknown, files: Map<string, string | Uint8Array>, unsafe?: string[]): string[];
-export function verifyVendored(root: string): string[];
+export function compareVendored(
+  lock: unknown,
+  files: Map<string, string | Uint8Array>,
+  unsafe?: string[],
+  directory?: 'platform' | 'contract',
+): string[];
+export function verifyVendored(root: string, name?: 'platform' | 'contract'): string[];
+export function carriedDirectories(root: string): Array<'platform' | 'contract'>;
 
 // cli.mjs
 export function run(

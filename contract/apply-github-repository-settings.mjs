@@ -5,7 +5,7 @@ import {
   githubApi,
   loadExpectedSettings,
   rulesetPayload,
-} from "./github-repository-settings.mjs";
+} from "../scripts/github-repository-settings.mjs";
 
 const expected = await loadExpectedSettings();
 const token = process.env.GH_ADMIN_TOKEN || process.env.GH_TOKEN || "";

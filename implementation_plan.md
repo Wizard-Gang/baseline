@@ -6,21 +6,6 @@
 
 Any PR may fill this queue; a `[PLAN]` PR that changes only this file is the usual way. A new task takes an ID above the highest one recorded here, which rises to it, so a removed ID is never reused. Keep this file tracked; do not delete it when the queue is empty.
 
-### BASE-045 — [OPS] Vendor the shared delivery scripts to consumers under a pinned lock
-
-- Dependency: None.
-- Why: The labs carry their own copies of baseline's delivery scripts, and nothing keeps the copies identical. On `origin/main` on 2026-10-29, `check-workflow-shell.mjs`, `workflow-yaml.mjs`, `verify-github-repository-settings.mjs` and `apply-github-repository-settings.mjs` were byte-identical in baseline, RenderLab and RigLab and absent from MapLab, and `check-release.mjs` matched in baseline and RigLab. Every other shared script had already forked (BASE-046).
-- Scope:
-  - A second grant in `config/phase.json` beside `platform/`: `contract/`, shared delivery tooling only. `scripts/repository-contract.mjs` accepts `contract/` only under that exact grant, as it does `platform/`.
-  - The byte-identical scripts move to `contract/`, and baseline's own package scripts run them from there.
-  - `vendor:lock` prints a lock for `contract/` as it does for `platform/`, and the conformance `pin` check verifies a consumer's `contract/vendor.lock.json`.
-- Non-goals: no change to the forked scripts (BASE-046) or the workflows (BASE-048). No change in a consumer repository; each one adopts on its next sync.
-- Acceptance:
-  - A consumer checkout with a vendored `contract/` and its lock passes `pin`. An edited, missing or unpinned file fails it.
-  - Baseline's checks run from `contract/` with unchanged decisions. `npm run check` passes in CI.
-- Validation: Pinned `npm ci`, `npm run check:gate`, `check:repository`, `check:patch`, `npm run audit:dependencies`, `git diff --check` and exact-head CI. Agents run no tests locally.
-- Authorities: `config/phase.json`, `scripts/repository-contract.mjs`, `scripts/vendor-lock.mjs`, `platform/conformance/`, `README.md` and `docs/CONTROL-MAP.md`.
-
 ### BASE-046 — [OPS] Split the forked delivery scripts into a shared core and per-repository config
 
 - Dependency: BASE-045.

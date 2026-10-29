@@ -5,7 +5,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  FORBIDDEN_APPLICATION_PATHS, PLATFORM_GRANT, TOKEN_SCRIPTS, validateRepositoryAt, validateRepositoryContract, validateRepositoryPaths,
+  CONTRACT_GRANT, CONTRACT_SCRIPTS, FORBIDDEN_APPLICATION_PATHS, PLATFORM_GRANT, TOKEN_SCRIPTS,
+  validateRepositoryAt, validateRepositoryContract, validateRepositoryPaths,
 } from '../scripts/repository-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,19 +164,25 @@ test('the Cloudflare token commands exist but never run inside check, another sc
   }
 });
 
-test('the committed phase grants exactly platform/ for shared edge code', () => {
+test('the committed phase grants exactly platform/ for shared edge code and contract/ for shared delivery tooling', () => {
   const { phase } = specimen();
   assert.equal(phase.applicationDevelopment, false);
   assert.deepEqual(phase.platform, { ...PLATFORM_GRANT });
+  assert.deepEqual(phase.contract, { ...CONTRACT_GRANT });
 });
 
-test('a phase without the exact platform grant fails the contract', () => {
+test('a phase without the exact platform and contract grants fails the contract', () => {
   const variants = [
     (phase) => { delete phase.platform; },
     (phase) => { phase.platform.path = 'src/'; },
     (phase) => { phase.platform.purpose = 'product code'; },
     (phase) => { phase.platform.deploy = true; },
     (phase) => { phase.workers = { path: 'workers/' }; },
+    (phase) => { delete phase.contract; },
+    (phase) => { phase.contract.path = 'scripts/'; },
+    (phase) => { phase.contract.purpose = 'shared edge code only'; },
+    (phase) => { phase.contract = { ...phase.platform }; },
+    (phase) => { phase.contract.application = true; },
   ];
   for (const change of variants) {
     const input = specimen();
@@ -201,6 +208,38 @@ test('platform/ is accepted only under the grant and never unlocks application p
   }
 });
 
+test('contract/ is accepted only under its grant and never unlocks application paths', () => {
+  const { phase } = specimen();
+  const withoutGrant = { ...phase };
+  delete withoutGrant.contract;
+  assert.deepEqual(validateRepositoryPaths(new Map([['platform', true], ['contract', true]]), phase), []);
+  assert.deepEqual(validateRepositoryPaths(new Map([['platform', true]]), withoutGrant), []);
+  assert.deepEqual(validateRepositoryPaths(new Map([['contract', true]]), withoutGrant),
+    ['contract/ exists without the config/phase.json contract grant']);
+  assert.deepEqual(validateRepositoryPaths(new Map([['contract', true]]), { ...phase, contract: { ...phase.platform } }),
+    ['contract/ exists without the config/phase.json contract grant']);
+  assert.deepEqual(validateRepositoryPaths(new Map([['contract', false]]), phase), ['contract/ must be a directory']);
+  for (const path of FORBIDDEN_APPLICATION_PATHS) {
+    assert.deepEqual(validateRepositoryPaths(new Map([['contract', true], [path, true]]), phase),
+      [`application path exists before contract proof: ${path}`]);
+  }
+});
+
+test('the shared delivery commands run their contract/ scripts and vendor:lock prints both locks', () => {
+  for (const [name, file] of Object.entries(CONTRACT_SCRIPTS)) {
+    assert.equal(specimen().pkg.scripts[name], `node contract/${file}`);
+    for (const command of [`node scripts/${file}`, `node ./contract/${file}`, undefined]) {
+      const input = specimen();
+      if (command) input.pkg.scripts[name] = command;
+      else delete input.pkg.scripts[name];
+      assert.ok(validateRepositoryContract(input).includes(`${name} must run contract/${file}`), `${name}: ${command}`);
+    }
+  }
+  const input = specimen();
+  input.pkg.scripts['vendor:lock'] = 'node contract/vendor-lock.mjs';
+  assert.ok(validateRepositoryContract(input).includes('vendor:lock must print the platform/ and contract/ locks with scripts/vendor-lock.mjs'));
+});
+
 test('a repository copy passes with the wg-edge platform/ and fails without the grant, a shell file or with a forbidden path', (t) => {
   const copy = mkdtempSync(join(tmpdir(), 'baseline-contract-'));
   t.after(() => rmSync(copy, { recursive: true, force: true }));
@@ -220,7 +259,23 @@ test('a repository copy passes with the wg-edge platform/ and fails without the 
   assert.ok(validateRepositoryAt(copy).includes('application path exists before contract proof: workers'));
   rmSync(join(copy, 'workers'), { recursive: true });
 
+  const contractFile = join(copy, 'contract/workflow-yaml.mjs');
+  const contractSource = readFileSync(contractFile, 'utf8');
+  rmSync(contractFile);
+  assert.ok(validateRepositoryAt(copy).includes('missing or empty repository authority: contract/workflow-yaml.mjs'));
+  writeFileSync(contractFile, contractSource);
+
+  for (const name of ['platform', 'contract']) {
+    writeFileSync(join(copy, name, 'vendor.lock.json'), '{}\n');
+    assert.ok(validateRepositoryAt(copy).includes(`baseline ${name}/ is the vendoring source and must not carry vendor.lock.json`));
+    rmSync(join(copy, name, 'vendor.lock.json'));
+  }
+  assert.deepEqual(validateRepositoryAt(copy), []);
+
   const phase = JSON.parse(readFileSync(join(copy, 'config/phase.json'), 'utf8'));
+  delete phase.contract;
+  writeFileSync(join(copy, 'config/phase.json'), `${JSON.stringify(phase, null, 2)}\n`);
+  assert.ok(validateRepositoryAt(copy).some((failure) => failure.includes('without the config/phase.json contract grant')));
   delete phase.platform;
   writeFileSync(join(copy, 'config/phase.json'), `${JSON.stringify(phase, null, 2)}\n`);
   assert.ok(validateRepositoryAt(copy).some((failure) => failure.includes('without the config/phase.json platform grant')));

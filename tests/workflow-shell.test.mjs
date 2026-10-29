@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { checkLiteralBashRuns, literalRunBlocks, workflowPaths } from '../scripts/check-workflow-shell.mjs';
+import { checkLiteralBashRuns, literalRunBlocks, workflowPaths } from '../contract/check-workflow-shell.mjs';
 
 test('workflow shell checker catches the missing publish-job fi', () => {
   const broken = 'steps:\n  - run: |\n      if [ -n "$EXPECTED_SHA" ]; then\n        [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ]\n';
