@@ -29,7 +29,8 @@ function historyAt(ref) {
 function planAt(ref) {
   checkedSha(ref, 'plan endpoint');
   if (!git('ls-tree', '--name-only', ref, '--', 'implementation_plan.md')) return null;
-  return git('show', `${ref}:implementation_plan.md`);
+  // Untrimmed: an empty queue is compared byte for byte with the shared template, final newline included.
+  return execFileSync('git', ['show', `${ref}:implementation_plan.md`], { cwd: root, encoding: 'utf8' });
 }
 
 function jsonAt(ref, path) {

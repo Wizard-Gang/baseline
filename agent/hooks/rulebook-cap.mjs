@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse guard: refuses a Write/Edit that would push the owner rulebook past its word cap.
+// PreToolUse guard: refuses a Write/Edit (or a Codex apply_patch) that would push the owner rulebook past its word cap.
 // Fails open: any error or unknown input allows the call.
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -18,6 +18,13 @@ const real = (path) => {
     return resolve(path);
   }
 };
+const readText = (path) => {
+  try {
+    return readFileSync(real(path), 'utf8');
+  } catch {
+    return '';
+  }
+};
 
 export const isRulebook = (path) => typeof path === 'string' && [real(RULEBOOK), real(TRACKED)].includes(real(path));
 
@@ -31,21 +38,40 @@ export function afterEdit(tool, input, current) {
     : text.replace(edit.old_string, () => edit.new_string)), current);
 }
 
+// Codex apply_patch carries the patch text in `command`. Word counts add over whole lines, so the
+// rulebook's count after the patch is its count now, minus the removed lines, plus the added lines.
+export function wordsAfterPatch(patch, cwd, read = readText) {
+  let total = null;
+  let inRulebook = false;
+  for (const line of patch.split('\n')) {
+    const header = /^\*\*\* (Add|Update|Delete) File: (.+)$/.exec(line);
+    if (header) {
+      const path = resolve(cwd, header[2].trim());
+      inRulebook = isRulebook(path);
+      if (inRulebook) total = header[1] === 'Update' ? words(read(path)) : 0;
+    } else if (inRulebook && /^[+-]/.test(line)) {
+      total += (line[0] === '+' ? 1 : -1) * words(line.slice(1));
+    }
+  }
+  return total;
+}
+
 async function main() {
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;
-  const { tool_name: tool, tool_input: input } = JSON.parse(raw);
-  let current = '';
-  try {
-    if (isRulebook(input?.file_path)) current = readFileSync(real(input.file_path), 'utf8');
-  } catch {}
-  const next = afterEdit(tool, input, current);
-  if (next === null || words(next) <= CAP) return;
+  const { tool_name: tool, tool_input: input, cwd } = JSON.parse(raw);
+  let count;
+  if (tool === 'apply_patch') count = wordsAfterPatch(String(input?.command ?? ''), cwd || process.cwd());
+  else {
+    const next = afterEdit(tool, input, isRulebook(input?.file_path) ? readText(input.file_path) : '');
+    count = next === null ? null : words(next);
+  }
+  if (count === null || count <= CAP) return;
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `Rulebook cap: this edit makes the owner rulebook (agent/RULEBOOK.md, linked as ~/.claude/CLAUDE.md) ${words(next)} words (cap ${CAP}). Remove or shorten an older rule in the same edit.`,
+      permissionDecisionReason: `Rulebook cap: this edit makes the owner rulebook (agent/RULEBOOK.md, linked as ~/.claude/CLAUDE.md) ${count} words (cap ${CAP}). Remove or shorten an older rule in the same edit.`,
     },
   }));
 }

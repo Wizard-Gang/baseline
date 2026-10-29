@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -60,6 +60,69 @@ test('no-tests denies agent test runs in enabled repositories through every shel
   assert.match(reason, /MAPLAB_ALLOW_TESTS=1/);
 });
 
+test('never denies publish, release creation and force pushes in every repository through every shell tool', () => {
+  const home = tempDir('home');
+  const never = (command, tool = 'Bash', input = { command }) => decision(hook(join(hooks, 'never.mjs'), { tool_name: tool, cwd: home, tool_input: input }, home));
+  for (const tool of ['Bash', 'Monitor', 'mcp__terminal__run_in_terminal']) {
+    for (const command of ['npm publish', 'gh release create v1.0.0', 'git push --force']) assert.equal(never(command, tool), 'deny', `${tool}: ${command}`);
+  }
+  assert.equal(never('', 'exec_command', { cmd: 'npm publish --access public' }), 'deny', 'Codex exec_command');
+  assert.equal(never('', 'exec_command', { argv: ['bash', '-lc', 'git push -f origin main'] }), 'deny', 'Codex argv');
+  for (const command of ['git push --force-with-lease origin main', 'git push --force-with-lease=main:abc origin main', 'git push -uf origin x', 'git push origin +main', 'git -C /x push origin +HEAD:main', 'cd x && sh -c "git push --force"', 'gh -R a/b release create v1']) {
+    assert.equal(never(command), 'deny', command);
+  }
+  for (const command of ['git push', 'git push -u origin base-044-x', 'git push origin main:refs/heads/release/r001', 'gh release view v1', 'npm run publish-docs', 'echo "npm publish"', "cat > notes.md <<'EOF'\ngit push --force\nEOF"]) {
+    assert.equal(never(command), 'none', command);
+  }
+  assert.equal(never('', 'apply_patch', { command: '*** Begin Patch\n*** Update File: a.md\n@@\n npm publish\n*** End Patch' }), 'none', 'patch text is data');
+  assert.match(hook(join(hooks, 'never.mjs'), { tool_name: 'Bash', tool_input: { command: 'npm publish' } }, home).permissionDecisionReason, /never hook: `npm publish`/);
+});
+
+function typedRepo(slug) {
+  const dir = tempDir('typed');
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore' });
+  git('init', '-q');
+  git('remote', 'add', 'origin', `https://github.com/${slug}.git`);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { typecheck: 'node typecheck.cjs', test: 'node -e "process.exit(9)"' } }));
+  writeFileSync(join(dir, 'typecheck.cjs'), "if (require('fs').existsSync('BROKEN')) { console.log(\"src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\"); process.exit(2); }\n");
+  git('add', '.');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'init');
+  return { dir, git };
+}
+
+test('typecheck blocks a stop once on a type error in changed TypeScript and is silent otherwise', () => {
+  const home = tempDir('home');
+  const stop = (cwd, active = false) => {
+    const result = spawnSync(process.execPath, [join(hooks, 'typecheck.mjs')], { input: JSON.stringify({ hook_event_name: 'Stop', cwd, stop_hook_active: active }), encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home } });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout ? JSON.parse(result.stdout) : null;
+  };
+  const maplab = typedRepo('Wizard-Gang/MapLab');
+  writeFileSync(join(maplab.dir, 'BROKEN'), '');
+  assert.equal(stop(maplab.dir), null, 'no TypeScript change, no typecheck');
+  mkdirSync(join(maplab.dir, 'src'));
+  writeFileSync(join(maplab.dir, 'src', 'a.ts'), 'export const a: number = 1;\n');
+  const blocked = stop(maplab.dir);
+  assert.equal(blocked.decision, 'block');
+  assert.match(blocked.reason, /Typecheck failed in Wizard-Gang\/MapLab[\s\S]*error TS2322/);
+  assert.equal(stop(maplab.dir, true), null, 'never again while stop_hook_active is set');
+  rmSync(join(maplab.dir, 'BROKEN'));
+  assert.equal(stop(maplab.dir), null, 'a pass is silent');
+
+  const riglab = typedRepo('Wizard-Gang/RigLab');
+  writeFileSync(join(riglab.dir, 'BROKEN'), '');
+  writeFileSync(join(riglab.dir, 'b.tsx'), 'export {};\n');
+  riglab.git('add', '.');
+  riglab.git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'tsx');
+  assert.equal(stop(riglab.dir).decision, 'block', 'unpushed commits count');
+
+  const other = typedRepo('Wizard-Gang/WizardGang');
+  writeFileSync(join(other.dir, 'BROKEN'), '');
+  writeFileSync(join(other.dir, 'c.ts'), 'export {};\n');
+  assert.equal(stop(other.dir), null, 'repositories outside typecheck.json');
+  assert.equal(stop(home), null, 'outside a repository');
+});
+
 test('context-budget reminds at 200k, blocks work tools at 300k and keeps state in the home directory', () => {
   const home = tempDir('home');
   const budget = (path, tool, input) => hook(join(hooks, 'context-budget.mjs'), { transcript_path: path, session_id: SESSION, tool_name: tool, tool_input: input }, home);
@@ -103,6 +166,13 @@ test('rulebook-cap holds 700 words through the home path and the tracked file', 
   const line = readFileSync(tracked, 'utf8').split('\n').find((text) => text.startsWith('- '));
   assert.equal(cap('Edit', { file_path: tracked, old_string: line, new_string: `${line} ${words(700)}` }), 'deny');
   assert.equal(cap('Write', { file_path: join(home, 'other.md'), content: words(900) }), 'none');
+  const patch = (header, body) => `*** Begin Patch\n*** ${header}\n${body}\n*** End Patch`;
+  const codex = (command, cwd = home) => decision(hook(join(hooks, 'rulebook-cap.mjs'), { tool_name: 'apply_patch', cwd, tool_input: { command } }, home));
+  assert.equal(codex(patch('Update File: .claude/CLAUDE.md', `@@\n+${words(100)}`)), 'none', 'Codex apply_patch at the cap');
+  assert.equal(codex(patch(`Update File: ${homePath}`, `@@\n+${words(101)}`)), 'deny', 'Codex apply_patch past the cap');
+  assert.equal(codex(patch('Update File: .claude/CLAUDE.md', `@@\n-${words(600)}\n+${words(700)}`)), 'none');
+  assert.equal(codex(patch('Add File: agent/RULEBOOK.md', `+${words(701)}`), root), 'deny', 'the tracked rulebook through apply_patch');
+  assert.equal(codex(patch('Add File: notes.md', `+${words(900)}`)), 'none');
   assert.ok(readFileSync(tracked, 'utf8').split(/\s+/).filter(Boolean).length <= 700, 'the tracked rulebook is within the cap');
 });
 
